@@ -7,15 +7,33 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "environment": "development"
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://mileagelog-api-avtoys.azurewebsites.net/api",
+        "EXPO_PUBLIC_AUTH_MODE": "entra",
+        "EXPO_PUBLIC_ENTRA_TENANT_ID": "4712cd50-fdbe-47a5-b632-f5d5e5e1a61b",
+        "EXPO_PUBLIC_ENTRA_CLIENT_ID": "8f9a2e0f-8e53-4d67-87f5-e16d4445e40a",
+        "EXPO_PUBLIC_ENTRA_API_SCOPE": "api://1e605472-f866-4d4d-a242-a17e6881ccaa/access_as_user"
+      }
     },
     "preview": {
       "distribution": "internal",
-      "environment": "preview"
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://mileagelog-api-avtoys.azurewebsites.net/api",
+        "EXPO_PUBLIC_AUTH_MODE": "entra",
+        "EXPO_PUBLIC_ENTRA_TENANT_ID": "4712cd50-fdbe-47a5-b632-f5d5e5e1a61b",
+        "EXPO_PUBLIC_ENTRA_CLIENT_ID": "8f9a2e0f-8e53-4d67-87f5-e16d4445e40a",
+        "EXPO_PUBLIC_ENTRA_API_SCOPE": "api://1e605472-f866-4d4d-a242-a17e6881ccaa/access_as_user"
+      }
     },
     "production": {
-      "environment": "production",
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://mileagelog-api-avtoys.azurewebsites.net/api",
+        "EXPO_PUBLIC_AUTH_MODE": "entra",
+        "EXPO_PUBLIC_ENTRA_TENANT_ID": "4712cd50-fdbe-47a5-b632-f5d5e5e1a61b",
+        "EXPO_PUBLIC_ENTRA_CLIENT_ID": "8f9a2e0f-8e53-4d67-87f5-e16d4445e40a",
+        "EXPO_PUBLIC_ENTRA_API_SCOPE": "api://1e605472-f866-4d4d-a242-a17e6881ccaa/access_as_user"
+      }
     }
   },
   "submit": {

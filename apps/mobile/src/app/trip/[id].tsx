@@ -111,7 +111,13 @@ function confirm(title: string, message: string): Promise<boolean> {
 }
 
 export default function TripEditor() {
-  const { id, classify } = useLocalSearchParams<{ id: string; classify?: string }>();
+  const { id, classify, gpsCheck, as } = useLocalSearchParams<{
+    id: string;
+    classify?: string;
+    gpsCheck?: string;
+    /** Pre-selects a classification (Business from the inbox, when the purpose is still missing). */
+    as?: string;
+  }>();
   const isNew = id === 'new';
   const classifying = classify === '1';
   const api = useApi();
@@ -130,7 +136,8 @@ export default function TripEditor() {
         setVehicles(active);
         if (t) {
           setTrip(t);
-          setForm(fromTrip(t));
+          const f = fromTrip(t);
+          setForm(as === 'business' || as === 'personal' || as === 'commute' ? { ...f, classification: as } : f);
         } else {
           // Default to the only/first active vehicle.
           setForm((f) => (f && !f.vehicleId && active[0] ? { ...f, vehicleId: active[0].id } : f));
@@ -194,6 +201,11 @@ export default function TripEditor() {
           <Text style={{ fontSize: 16, color: colors.text }}>
             {[trip.startLabel, trip.endLabel].filter(Boolean).join(' → ') || 'Locations unavailable'}
           </Text>
+          {gpsCheck === '1' ? (
+            <Text style={{ color: colors.danger }}>
+              GPS lost track for part of this trip, so these miles may be short. Check them before you save.
+            </Text>
+          ) : null}
           <Muted>Business or personal? Rename the places if you like; the app remembers them next time.</Muted>
         </View>
       ) : null}

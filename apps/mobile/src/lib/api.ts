@@ -2,6 +2,7 @@ import type {
   ReportSummary,
   Settings,
   TeslaStatus,
+  ClassifyInput,
   Trip,
   TripEndInput,
   TripInput,
@@ -76,6 +77,9 @@ export function useApi() {
       createTrip: (t: TripInput) => json<Trip>('POST', '/trips', t),
       updateTrip: (id: string, t: TripInput) => json<Trip>('PUT', `/trips/${id}`, t),
       deleteTrip: (id: string) => json<void>('DELETE', `/trips/${id}`),
+      inbox: () => json<Trip[]>('GET', '/trips/inbox'),
+      classify: (id: string, classification: ClassifyInput['classification']) =>
+        json<Trip>('POST', `/trips/${id}/classify`, { classification }),
       activeTrip: () => json<{ trip: Trip | null }>('GET', '/trips/active'),
       startTrip: (t: TripStartInput) => json<Trip>('POST', '/trips/start', t),
       endTrip: (id: string, t: TripEndInput) => json<Trip>('POST', `/trips/${id}/end`, t),

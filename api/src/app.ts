@@ -1,5 +1,6 @@
 import type pg from 'pg';
 import {
+  classifySchema,
   dateRangeSchema,
   fieldErrors,
   localDate,
@@ -178,13 +179,17 @@ const router = new Router<Ctx>()
     } else if (e.gpsMiles !== null) {
       miles = Math.round(e.gpsMiles * 10) / 10;
       source = 'gps';
+    } else if (e.miles !== null) {
+      miles = Math.round(e.miles * 10) / 10;
     }
     if (miles === null || miles <= 0) {
-      throw new HttpError(422, 'Validation failed', {
-        endOdometer: trip.startOdometer === null
-          ? 'This trip has no start odometer. Enter the miles on the trip instead.'
-          : 'Enter the end odometer reading.',
-      });
+      throw new HttpError(
+        422,
+        'Validation failed',
+        trip.startOdometer === null
+          ? { miles: 'Enter the miles for this trip.' }
+          : { endOdometer: 'Enter the end odometer reading.' },
+      );
     }
     const location = car?.location ?? e.location;
     const place = await describe(ctx, location);
@@ -240,6 +245,19 @@ const router = new Router<Ctx>()
     }
   })
 
+  .on('GET', '/trips/inbox', async (ctx) => ok(await ctx.repo.inbox(ctx.user.id)))
+  .on('POST', '/trips/:id/classify', async (ctx, params) => {
+    const { classification } = parse(classifySchema, await body(ctx.req));
+    const trip = await ctx.repo.getTrip(ctx.user.id, id(params));
+    if (!trip || trip.status !== 'finished') throw new HttpError(404, 'Not found');
+    if (classification === 'business' && (!trip.endLabel?.trim() || !trip.purpose?.trim())) {
+      throw new HttpError(422, 'Validation failed', {
+        ...(!trip.endLabel?.trim() && { endLabel: 'Business trips need a destination.' }),
+        ...(!trip.purpose?.trim() && { purpose: 'Business trips need a purpose.' }),
+      });
+    }
+    return ok(await ctx.repo.classifyTrip(ctx.user.id, trip.id, classification));
+  })
   .on('GET', '/trips', async (ctx) => {
     const r = range(ctx);
     return ok(await ctx.repo.listTrips(ctx.user.id, r.start, r.end));

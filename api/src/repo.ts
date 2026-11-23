@@ -1,5 +1,5 @@
 import type pg from 'pg';
-import type { NormalizedTripInput, Settings, Trip, TripSource, User, Vehicle } from '@mileage/shared';
+import type { Classification, NormalizedTripInput, Settings, Trip, TripSource, User, Vehicle } from '@mileage/shared';
 import type { Identity } from './auth.js';
 
 export interface UserRecord extends User, Settings {}
@@ -314,6 +314,26 @@ export class Repo {
        WHERE user_id = $1 AND id = $2 AND deleted_at IS NULL AND status = 'finished'
        RETURNING ${TRIP_COLUMNS}`,
       [userId, id, ...tripValues(t)],
+    );
+    return rows[0] ? toTrip(rows[0]) : null;
+  }
+
+  /** Finished trips still waiting for Business or Personal, newest first. */
+  async inbox(userId: string, limit = 50): Promise<Trip[]> {
+    const { rows } = await this.db.query(
+      `SELECT ${TRIP_COLUMNS} FROM trips
+       WHERE user_id = $1 AND deleted_at IS NULL AND status = 'finished' AND classification = 'unclassified'
+       ORDER BY started_at DESC LIMIT $2`,
+      [userId, limit],
+    );
+    return rows.map(toTrip);
+  }
+
+  async classifyTrip(userId: string, id: string, classification: Classification): Promise<Trip | null> {
+    const { rows } = await this.db.query(
+      `UPDATE trips SET classification = $3, updated_at = now()
+       WHERE user_id = $1 AND id = $2 AND deleted_at IS NULL RETURNING ${TRIP_COLUMNS}`,
+      [userId, id, classification],
     );
     return rows[0] ? toTrip(rows[0]) : null;
   }

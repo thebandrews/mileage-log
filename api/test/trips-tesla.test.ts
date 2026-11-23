@@ -166,6 +166,42 @@ describeDb('Start/End trips and Tesla', () => {
     expect(ended.json).toMatchObject({ miles: 3.3, source: 'gps' });
   });
 
+  it('takes typed miles when there is no start odometer and no GPS', async () => {
+    const tripId = ((await call('POST', '/trips/start', { location: YARD })).json as { id: string }).id;
+    const missing = await call('POST', `/trips/${tripId}/end`, {});
+    expect(missing.json).toMatchObject({ fields: { miles: 'Enter the miles for this trip.' } });
+    const ended = await call('POST', `/trips/${tripId}/end`, { miles: 7.25, location: SMITH });
+    expect(ended.json).toMatchObject({ miles: 7.3, source: 'manual' });
+  });
+
+  it('lists unclassified trips in the inbox and classifies them in one tap', async () => {
+    const end = async (body: Record<string, unknown>) => {
+      const id = ((await call('POST', '/trips/start', { location: YARD })).json as { id: string }).id;
+      return ((await call('POST', `/trips/${id}/end`, { location: SMITH, ...body })).json as { id: string }).id;
+    };
+    const first = await end({ gpsMiles: 4 });
+    const second = await end({ gpsMiles: 6 });
+    // Still in progress: not in the inbox.
+    await call('POST', '/trips/start', { location: YARD });
+
+    const inbox = (await call('GET', '/trips/inbox')).json as { id: string }[];
+    expect(inbox.map((t) => t.id)).toEqual([second, first]);
+    expect((await call('GET', '/trips/inbox', undefined, 'someone-else')).json).toEqual([]);
+
+    expect((await call('POST', `/trips/${first}/classify`, { classification: 'personal' })).json).toMatchObject({
+      classification: 'personal',
+    });
+    // Business needs a purpose first; the destination came from the geocoder.
+    const business = await call('POST', `/trips/${second}/classify`, { classification: 'business' });
+    expect(business.status).toBe(422);
+    expect(business.json).toMatchObject({ fields: { purpose: 'Business trips need a purpose.' } });
+    expect((business.json as { fields: Record<string, string> }).fields.endLabel).toBeUndefined();
+    expect((await call('POST', `/trips/${second}/classify`, { classification: 'unclassified' })).status).toBe(422);
+    expect((await call('POST', `/trips/${second}/classify`, { classification: 'personal' }, 'someone-else')).status).toBe(404);
+
+    expect(((await call('GET', '/trips/inbox')).json as { id: string }[]).map((t) => t.id)).toEqual([second]);
+  });
+
   it('reuses a name the user gave a place before', async () => {
     const first = ((await call('POST', '/trips/start', { location: YARD, startOdometer: 1 })).json as { id: string }).id;
     const ended = (await call('POST', `/trips/${first}/end`, { location: SMITH, endOdometer: 5 })).json as Record<string, unknown>;

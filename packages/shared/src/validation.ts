@@ -119,8 +119,16 @@ export const tripEndSchema = z.object({
   endOdometer: odometer,
   /** Distance the phone measured, when there's no odometer. */
   gpsMiles: z.number().positive().max(5000).nullish().transform((v) => v ?? null),
+  /** Miles typed in, when the trip has no start odometer and the phone didn't measure it. */
+  miles: z.number().positive().max(5000).nullish().transform((v) => v ?? null),
 });
 export type TripEndInput = z.input<typeof tripEndSchema>;
+
+/** One-tap classification from the trip inbox. */
+export const classifySchema = z.object({
+  classification: z.enum(['business', 'personal', 'commute']),
+});
+export type ClassifyInput = z.input<typeof classifySchema>;
 
 export const settingsInputSchema = z.object({
   timezone: z

@@ -116,7 +116,10 @@ Every push to `main` that touches the app, API or infra deploys; **Actions → D
 Today has a **Start trip** button. Pick the vehicle and tap Start; tap End when you arrive. Miles come from:
 
 - **A linked Tesla:** the server reads the car's odometer and location at Start and End (Tesla Fleet API, two reads per trip, inside Tesla's free monthly credit).
-- **Any other vehicle:** odometer readings typed at Start and End (the next start pre-fills the last reading). Phone-GPS distance arrives with the iPhone app.
+- **Any other vehicle, in the iPhone app:** the phone measures the distance with GPS between Start and End, even locked in a pocket (location access must be set to "Always"). Odometer readings are optional; if you enter both, the odometer wins. Only the total leaves the phone, at End. If GPS lost the trip for a stretch, the trip-ended screen asks you to check the miles.
+- **Any other vehicle, on the web:** odometer readings at Start and End (pre-filled from the last reading), or the miles typed at End. Browsers stop reporting location in the background, so the web app doesn't track.
+
+Ended trips start out unclassified and wait in the **inbox** on Today: one tap for Personal, one tap for Business when the trip already has a destination and purpose (otherwise it opens the trip to add them).
 
 Start and end points are turned into addresses with Azure Maps (managed identity, no keys). Rename a place once ("Yard", "Smith residence") and trips that start or end within 150 m reuse the name.
 
@@ -141,9 +144,17 @@ Start and end points are turned into addresses with Azure Maps (managed identity
 
 ## Mobile builds (no Mac needed)
 
-1. Join the Apple Developer Program and create an Expo account.
-2. Once, from any terminal: `cd apps/mobile && npx eas-cli init && npx eas-cli build -p ios --profile development`. EAS asks for your Apple ID and creates the signing credentials (stored by Expo, not in GitHub).
-3. Set the app's config as EAS environment variables (public identifiers, not secrets) for the `development`, `preview` and `production` environments: `EXPO_PUBLIC_API_URL` (the deployed API), `EXPO_PUBLIC_AUTH_MODE=entra`, and the three `EXPO_PUBLIC_ENTRA_*` values from `apps/mobile/.env.example`.
+1. Join the Apple Developer Program and create a free Expo account at expo.dev.
+2. From any terminal with Node (Azure Cloud Shell works), once:
+   ```sh
+   git clone https://github.com/thebandrews/mileage-log && cd mileage-log/apps/mobile && npm install
+   npx eas-cli@latest login
+   npx eas-cli@latest init                 # creates the Expo project; commit the projectId it adds to app.json
+   npx eas-cli@latest device:create        # shows a link/QR: open it on the iPhone to register it
+   npx eas-cli@latest build -p ios --profile preview
+   ```
+   EAS asks for your Apple ID and creates the signing credentials (stored by Expo, not in GitHub). When the build finishes, open its link on the iPhone to install. iOS 16+ also needs **Settings → Privacy & Security → Developer Mode** turned on for internal builds.
+3. The app's config (API address, Entra tenant and client IDs) is in `apps/mobile/eas.json` for each profile. These are public identifiers, not secrets; nothing else needs setting.
 4. To build without a terminal, connect this repo in the Expo dashboard (Project → GitHub) and start builds there, so no Expo token is stored in GitHub either.
 
 Profiles: `development` (dev client for live reload), `preview` (internal install), `production` (App Store / TestFlight).
@@ -152,5 +163,5 @@ Profiles: `development` (dev client for live reload), `preview` (internal instal
 
 - Postgres accepts connections from Azure services; each still needs a valid Entra token and TLS (password sign-in is off). Move to VNet integration if this grows beyond a few users.
 - To query the database yourself, add your account as a second Entra admin on the server in the portal.
-- No Tesla or GPS ingestion yet; the schema already has `source` and `external_id` for de-duplicating automatic trips.
+- Trips only come from Start/End and manual entry; automatic trips (phase 4) will use `source` and `external_id` to avoid duplicates.
 - One user's data is private to that user; there are no shared/company views yet.

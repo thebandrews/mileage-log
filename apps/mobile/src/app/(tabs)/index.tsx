@@ -1,5 +1,6 @@
 import { router } from 'expo-router';
 import { RefreshControl, ScrollView, Text, View } from 'react-native';
+import { Inbox } from '@/components/Inbox';
 import { TripControl } from '@/components/TripControl';
 import { TripRow } from '@/components/TripRow';
 import { Button, Card, ErrorBanner, Loading, Muted, colors, styles } from '@/components/ui';
@@ -18,13 +19,20 @@ export default function Today() {
         api.activeTrip(),
         api.vehicles(),
         api.teslaStatus().catch(() => ({ configured: false, connected: false })),
+        api.inbox(),
       ]),
     [api, range.from],
   );
 
   if (!data && loading) return <Loading />;
-  const [summary, trips, active, vehicles, tesla] = data ?? [null, [], { trip: null }, [], { configured: false, connected: false }];
-  const unclassified = trips.filter((t) => t.classification === 'unclassified').length;
+  const [summary, trips, active, vehicles, tesla, inbox] = data ?? [
+    null,
+    [],
+    { trip: null },
+    [],
+    { configured: false, connected: false },
+    [],
+  ];
 
   return (
     <ScrollView
@@ -36,6 +44,7 @@ export default function Today() {
       {data ? (
         <TripControl active={active.trip} vehicles={vehicles} teslaConnected={tesla.connected} onChanged={reload} />
       ) : null}
+      <Inbox trips={inbox} onChanged={reload} />
       {summary ? (
         <Card>
           <Muted>{monthLabel(range.from)} to date</Muted>
@@ -52,19 +61,12 @@ export default function Today() {
         </Card>
       ) : null}
 
-      {unclassified > 0 || (summary?.incompleteBusinessTrips ?? 0) > 0 ? (
+      {summary && summary.incompleteBusinessTrips > 0 ? (
         <Card style={{ borderColor: colors.commute }}>
-          {unclassified > 0 ? (
-            <Text style={{ color: colors.text }}>
-              {unclassified} trip{unclassified === 1 ? '' : 's'} to classify
-            </Text>
-          ) : null}
-          {summary && summary.incompleteBusinessTrips > 0 ? (
-            <Text style={{ color: colors.text }}>
-              {summary.incompleteBusinessTrips} business trip{summary.incompleteBusinessTrips === 1 ? '' : 's'} missing a
-              destination or purpose
-            </Text>
-          ) : null}
+          <Text style={{ color: colors.text }}>
+            {summary.incompleteBusinessTrips} business trip{summary.incompleteBusinessTrips === 1 ? '' : 's'} missing a
+            destination or purpose
+          </Text>
         </Card>
       ) : null}
 

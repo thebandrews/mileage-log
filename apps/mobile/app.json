@@ -33,7 +33,11 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Mileage Log records where each trip starts and ends so your log shows the destination."
+          "locationWhenInUsePermission": "Mileage Log records where each trip starts and ends so your log shows the destination.",
+          "locationAlwaysAndWhenInUsePermission": "Mileage Log measures the miles of a trip you started, even with your phone locked or in your pocket. It only tracks between Start trip and End trip.",
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
         }
       ]
     ],
