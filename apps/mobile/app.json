@@ -47,6 +47,12 @@
     "scheme": "mileagelog",
     "experiments": {
       "typedRoutes": true
+    },
+    "owner": "beandrew",
+    "extra": {
+      "eas": {
+        "projectId": "27d34fb1-a8c8-40e4-ae84-713f730a590e"
+      }
     }
   }
 }
