@@ -15,14 +15,6 @@ param location string = resourceGroup().location
 @allowed(['westus2', 'centralus', 'eastus2', 'westeurope', 'eastasia'])
 param staticWebAppLocation string = 'westus2'
 
-@description('PostgreSQL administrator login.')
-param postgresAdminLogin string = 'mileageadmin'
-
-@description('PostgreSQL administrator password. Stored in Key Vault; the API reads it through a Key Vault reference.')
-@secure()
-@minLength(16)
-param postgresAdminPassword string
-
 @description('Entra tenant that signs users in. May differ from the tenant hosting these resources.')
 param entraTenantId string
 
@@ -40,7 +32,6 @@ var names = {
   plan: '${appName}-plan'
   api: '${appName}-api-${take(suffix, 6)}'
   postgres: '${appName}-pg-${take(suffix, 6)}'
-  vault: take('${appName}kv${suffix}', 24)
   web: '${appName}-web'
 }
 var deploymentContainer = 'app-package'
@@ -51,7 +42,6 @@ var roles = {
   storageQueueDataContributor: '974c5e8b-45b9-4653-ba55-5f855dd0fb88'
   storageTableDataContributor: '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'
   monitoringMetricsPublisher: '3913510d-42f4-4e42-8a64-420c390055eb'
-  keyVaultSecretsUser: '4633458b-17de-408a-b874-0445c86b69e6'
 }
 
 // ---------- Monitoring ----------
@@ -102,7 +92,7 @@ resource packageContainer 'Microsoft.Storage/storageAccounts/blobServices/contai
   name: deploymentContainer
 }
 
-// ---------- PostgreSQL ----------
+// ---------- PostgreSQL (Entra authentication only: no passwords exist) ----------
 
 resource postgres 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' = {
   name: names.postgres
@@ -113,11 +103,10 @@ resource postgres 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' = {
   }
   properties: {
     version: '16'
-    administratorLogin: postgresAdminLogin
-    administratorLoginPassword: postgresAdminPassword
     authConfig: {
-      passwordAuth: 'Enabled'
-      activeDirectoryAuth: 'Disabled'
+      passwordAuth: 'Disabled'
+      activeDirectoryAuth: 'Enabled'
+      tenantId: tenant().tenantId
     }
     storage: {
       storageSizeGB: 32
@@ -142,7 +131,7 @@ resource database 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2024-08-0
 }
 
 // Flex Consumption has no fixed outbound IPs, so allow Azure services (0.0.0.0).
-// Connections still need the password and TLS. Tighten with VNet integration later.
+// Connections still need a valid Entra token and TLS. Tighten with VNet integration later.
 resource allowAzure 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2024-08-01' = {
   parent: postgres
   name: 'AllowAzureServices'
@@ -150,26 +139,6 @@ resource allowAzure 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@202
     startIpAddress: '0.0.0.0'
     endIpAddress: '0.0.0.0'
   }
-}
-
-// ---------- Key Vault ----------
-
-resource vault 'Microsoft.KeyVault/vaults@2023-07-01' = {
-  name: names.vault
-  location: location
-  properties: {
-    tenantId: tenant().tenantId
-    sku: { family: 'A', name: 'standard' }
-    enableRbacAuthorization: true
-    enableSoftDelete: true
-    softDeleteRetentionInDays: 30
-  }
-}
-
-resource pgPasswordSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
-  parent: vault
-  name: 'postgres-password'
-  properties: { value: postgresAdminPassword }
 }
 
 // ---------- Static Web App (web build of the Expo app) ----------
@@ -245,14 +214,16 @@ resource insightsRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   }
 }
 
-resource vaultRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(vault.id, api.id, roles.keyVaultSecretsUser)
-  scope: vault
-  properties: {
+// The API's managed identity is the database's Entra admin, so it signs in with
+// short-lived tokens. Created after the other server changes (one at a time).
+module pgAdmin 'modules/pg-admin.bicep' = {
+  name: 'pg-entra-admin'
+  params: {
+    serverName: postgres.name
     principalId: api.identity.principalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.keyVaultSecretsUser)
+    principalName: api.name
   }
+  dependsOn: [database, allowAzure]
 }
 
 resource apiSettings 'Microsoft.Web/sites/config@2024-04-01' = {
@@ -270,11 +241,11 @@ resource apiSettings 'Microsoft.Web/sites/config@2024-04-01' = {
     PGHOST: postgres.properties.fullyQualifiedDomainName
     PGPORT: '5432'
     PGDATABASE: databaseName
-    PGUSER: postgresAdminLogin
-    PGPASSWORD: '@Microsoft.KeyVault(SecretUri=${pgPasswordSecret.properties.secretUri})'
+    PGUSER: api.name
+    PG_AUTH: 'entra'
     PGSSLMODE: 'require'
   }
-  dependsOn: [vaultRole, storageRoleAssignments, insightsRole]
+  dependsOn: [pgAdmin, storageRoleAssignments, insightsRole]
 }
 
 output apiName string = api.name
@@ -282,4 +253,3 @@ output apiBaseUrl string = 'https://${api.properties.defaultHostName}/api'
 output webName string = web.name
 output webUrl string = 'https://${web.properties.defaultHostname}'
 output postgresHost string = postgres.properties.fullyQualifiedDomainName
-output keyVaultName string = vault.name

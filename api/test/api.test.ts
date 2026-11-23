@@ -204,3 +204,28 @@ describe('Entra token validation', () => {
     expect(await status(authenticate(withToken('not.a.jwt')))).toBe(401);
   });
 });
+
+describe('createPool', () => {
+  it('uses a fresh Entra token as the password when PG_AUTH=entra', async () => {
+    const { createPool, POSTGRES_TOKEN_SCOPE } = await import('../src/db.js');
+    const scopes: string[] = [];
+    const pool = createPool({ PG_AUTH: 'entra', PGHOST: 'example.invalid' } as NodeJS.ProcessEnv, {
+      getToken: async (scope) => {
+        scopes.push(scope);
+        return { token: 'entra-token' };
+      },
+    });
+    const password = (pool as unknown as { options: { password: () => Promise<string> } }).options.password;
+    expect(typeof password).toBe('function');
+    expect(await password()).toBe('entra-token');
+    expect(scopes).toEqual([POSTGRES_TOKEN_SCOPE]);
+    await pool.end();
+  });
+
+  it('leaves password auth alone otherwise', async () => {
+    const { createPool } = await import('../src/db.js');
+    const pool = createPool({ DATABASE_URL: 'postgres://u:p@localhost/db' } as NodeJS.ProcessEnv);
+    expect((pool as unknown as { options: { password?: unknown } }).options.password).toBeUndefined();
+    await pool.end();
+  });
+});

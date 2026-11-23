@@ -6,8 +6,8 @@ Mileage logging for Pacifica Landscapes. Phase 1: manual trips, Microsoft sign-i
 apps/mobile      Expo (React Native) app for iOS, Android and web
 api              Azure Functions API (Node 22, TypeScript) + local dev server
 packages/shared  Types, validation, IRS rates, report math, CSV (used by app and API)
-infra            Bicep: Functions (Flex Consumption), PostgreSQL, Key Vault, Static Web App, App Insights
-.github          CI, Azure deploy, EAS mobile builds
+infra            Bicep: Functions (Flex Consumption), PostgreSQL (Entra auth), Static Web App, App Insights
+.github          CI and Azure deploy
 ```
 
 ## How it works
@@ -15,6 +15,7 @@ infra            Bicep: Functions (Flex Consumption), PostgreSQL, Key Vault, Sta
 - **Trips** are stored per user in PostgreSQL. Business trips must have a destination and business purpose (the IRS substantiation fields), enforced in `packages/shared/src/validation.ts` on both the app and the API.
 - **Reports** bucket trips by local day and month (default time zone `America/Los_Angeles`) and value business miles at the IRS rate in force on each trip date — 2026 changed mid-year from 72.5¢ to 76¢ on July 1 (`packages/shared/src/rates.ts`). A custom rate in Settings overrides it.
 - **Sign-in** is Microsoft Entra ID (your work account). The API validates Entra access tokens (`api/src/auth.ts`); every query is scoped to the signed-in user.
+- **Database sign-in** uses the API's managed identity (`PG_AUTH=entra` in `api/src/db.ts`); there is no database password. Locally, `DATABASE_URL` with a password still works.
 - **Migrations** run automatically on the API's first request (`api/src/db.ts`), or with `npm run migrate`.
 
 ## Local development
@@ -88,31 +89,33 @@ echo "AZURE_TENANT_ID=$(az account show --query tenantId -o tsv)"
 echo "AZURE_SUBSCRIPTION_ID=$(az account show --query id -o tsv)"
 ```
 
-`Owner` on the resource group is needed because the template creates role assignments (Key Vault, storage). It is scoped to this one group. If the subscription has never used these services, register the providers once: `az provider register -n Microsoft.Web`, `Microsoft.DBforPostgreSQL`, `Microsoft.KeyVault`, `Microsoft.OperationalInsights`, `Microsoft.Insights`, `Microsoft.Storage`.
+`Owner` on the resource group is needed because the template creates role assignments (storage, monitoring) and the database admin. It is scoped to this one group. If the subscription has never used these services, register the providers once: `az provider register -n Microsoft.Web`, `Microsoft.DBforPostgreSQL`, `Microsoft.OperationalInsights`, `Microsoft.Insights`, `Microsoft.Storage`.
 
-### 3. GitHub secrets and variable
+### 3. GitHub variables (no secrets)
 
-| Name | Kind | Value |
-| --- | --- | --- |
-| `AZURE_CLIENT_ID` | secret | from step 2 |
-| `AZURE_TENANT_ID` | secret | from step 2 (the personal tenant) |
-| `AZURE_SUBSCRIPTION_ID` | secret | from step 2 |
-| `POSTGRES_ADMIN_PASSWORD` | secret | a long random password (16+ chars) |
-| `AZURE_RESOURCE_GROUP` | variable | `rg-mileage-log` |
+Nothing secret is stored in GitHub. Deploys sign in to Azure with OIDC (a short-lived token GitHub mints per run, trusted through the federated credential above), and the API signs in to PostgreSQL with its own managed identity (the database has password sign-in turned off). These four repository **variables** are identifiers, not credentials:
+
+| Variable | Value |
+| --- | --- |
+| `AZURE_CLIENT_ID` | from step 2 |
+| `AZURE_TENANT_ID` | from step 2 (the personal tenant) |
+| `AZURE_SUBSCRIPTION_ID` | from step 2 |
+| `AZURE_RESOURCE_GROUP` | `rg-mileage-log` |
 
 Then run **Actions → Deploy to Azure**. It deploys the Bicep, the API (with a health check) and the web app, and prints the web URL.
 
 ## Mobile builds (no Mac needed)
 
 1. Join the Apple Developer Program and create an Expo account.
-2. Once, from any terminal: `cd apps/mobile && npx eas-cli init && npx eas-cli build -p ios --profile development`. EAS asks for your Apple ID and creates the signing credentials.
+2. Once, from any terminal: `cd apps/mobile && npx eas-cli init && npx eas-cli build -p ios --profile development`. EAS asks for your Apple ID and creates the signing credentials (stored by Expo, not in GitHub).
 3. Set the app's config as EAS environment variables (public identifiers, not secrets) for the `development`, `preview` and `production` environments: `EXPO_PUBLIC_API_URL` (the deployed API), `EXPO_PUBLIC_AUTH_MODE=entra`, and the three `EXPO_PUBLIC_ENTRA_*` values from `apps/mobile/.env.example`.
-4. After that, **Actions → Mobile build (EAS)** builds without a terminal (needs the `EXPO_TOKEN` secret).
+4. To build without a terminal, connect this repo in the Expo dashboard (Project → GitHub) and start builds there, so no Expo token is stored in GitHub either.
 
 Profiles: `development` (dev client for live reload), `preview` (internal install), `production` (App Store / TestFlight).
 
 ## Phase 1 limits
 
-- Postgres allows connections from Azure services (password + TLS). Move to VNet integration if this grows beyond a few users.
+- Postgres accepts connections from Azure services; each still needs a valid Entra token and TLS (password sign-in is off). Move to VNet integration if this grows beyond a few users.
+- To query the database yourself, add your account as a second Entra admin on the server in the portal.
 - No Tesla or GPS ingestion yet; the schema already has `source` and `external_id` for de-duplicating automatic trips.
 - One user's data is private to that user; there are no shared/company views yet.

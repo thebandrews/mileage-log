@@ -63,15 +63,37 @@ export const MIGRATIONS: { version: number; name: string; sql: string }[] = [
   },
 ];
 
-export function createPool(): pg.Pool {
-  const sslRequired = ['require', 'verify-ca', 'verify-full'].includes(process.env.PGSSLMODE ?? '');
-  return new pg.Pool({
-    connectionString: process.env.DATABASE_URL,
+/** Scope for Microsoft Entra tokens accepted by Azure Database for PostgreSQL. */
+export const POSTGRES_TOKEN_SCOPE = 'https://ossrdbms-aad.database.windows.net/.default';
+
+export interface TokenSource {
+  getToken(scope: string): Promise<{ token: string } | null>;
+}
+
+/**
+ * PG_AUTH=entra: no password anywhere. Each new connection signs in with a short-lived
+ * Entra token for the app's managed identity (DefaultAzureCredential locally uses `az login`).
+ * Otherwise the usual DATABASE_URL / PG* environment variables apply.
+ */
+export function createPool(env: NodeJS.ProcessEnv = process.env, tokens?: TokenSource): pg.Pool {
+  const sslRequired = ['require', 'verify-ca', 'verify-full'].includes(env.PGSSLMODE ?? '');
+  const config: pg.PoolConfig = {
+    connectionString: env.DATABASE_URL,
     // Azure Database for PostgreSQL presents a publicly trusted certificate.
     ssl: sslRequired ? { rejectUnauthorized: true } : undefined,
-    max: Number(process.env.PG_POOL_MAX ?? 5),
+    max: Number(env.PG_POOL_MAX ?? 5),
     idleTimeoutMillis: 30_000,
-  });
+  };
+  if (env.PG_AUTH === 'entra') {
+    let source = tokens;
+    config.password = async () => {
+      source ??= new (await import('@azure/identity')).DefaultAzureCredential();
+      const t = await source.getToken(POSTGRES_TOKEN_SCOPE);
+      if (!t) throw new Error('Could not get an Entra token for PostgreSQL');
+      return t.token;
+    };
+  }
+  return new pg.Pool(config);
 }
 
 const MIGRATION_LOCK = 4_812_377; // arbitrary advisory-lock key for this app
