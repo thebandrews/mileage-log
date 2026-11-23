@@ -144,6 +144,20 @@ describeDb('Start/End trips and Tesla', () => {
     expect(today).toBeTruthy();
   });
 
+  it('cancels a started trip so a new one can start', async () => {
+    const first = ((await call('POST', '/trips/start', { startOdometer: 50 })).json as { id: string }).id;
+    expect((await call('DELETE', `/trips/${first}`)).status).toBe(204);
+    expect((await call('GET', '/trips/active')).json).toEqual({ trip: null });
+    expect((await call('POST', '/trips/start', { startOdometer: 50 })).status).toBe(201);
+  });
+
+  it('renames a linked Tesla without unlinking it', async () => {
+    const id = await vehicle({ name: 'Tesla 071499', kind: 'car', isTesla: true });
+    await pool.query("UPDATE vehicles SET tesla_vin = '7SAYGDEE1PA071499' WHERE id = $1", [id]);
+    const renamed = await call('PUT', `/vehicles/${id}`, { name: 'Model Y', kind: 'car', isTesla: true });
+    expect(renamed.json).toMatchObject({ name: 'Model Y', teslaVin: '7SAYGDEE1PA071499' });
+  });
+
   it('uses GPS distance when there is no odometer, and needs one or the other', async () => {
     const tripId = ((await call('POST', '/trips/start', { location: YARD })).json as { id: string }).id;
     const missing = await call('POST', `/trips/${tripId}/end`, {});

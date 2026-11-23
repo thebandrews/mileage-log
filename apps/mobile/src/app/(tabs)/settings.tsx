@@ -69,13 +69,57 @@ function VehicleForm({ onSaved }: { onSaved: () => void }) {
 
 function VehicleRow({ vehicle, onChanged }: { vehicle: Vehicle; onChanged: () => void }) {
   const api = useApi();
-  const toggleArchived = async () => {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(vehicle.name);
+  const [error, setError] = useState<string | undefined>();
+  const [busy, setBusy] = useState(false);
+
+  async function update(changes: Partial<Pick<Vehicle, 'name' | 'archived'>>) {
     const { id: _id, createdAt: _c, teslaVin: _v, ...rest } = vehicle;
-    await api.updateVehicle(vehicle.id, { ...rest, archived: !vehicle.archived });
+    await api.updateVehicle(vehicle.id, { ...rest, ...changes });
     onChanged();
-  };
+  }
+
+  async function saveName() {
+    if (!name.trim()) return setError('Enter a name.');
+    setBusy(true);
+    try {
+      await update({ name: name.trim() });
+      setEditing(false);
+      setError(undefined);
+    } catch (e) {
+      setError(e instanceof ApiError ? (e.fields.name ?? e.message) : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <View style={{ paddingVertical: 8, gap: 8 }}>
+        <Field label="Vehicle name" value={name} onChangeText={setName} error={error} autoFocus onSubmitEditing={saveName} />
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <View style={{ flex: 1 }}>
+            <Button title="Save name" onPress={saveName} busy={busy} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Button
+              title="Cancel"
+              kind="secondary"
+              onPress={() => {
+                setEditing(false);
+                setName(vehicle.name);
+                setError(undefined);
+              }}
+            />
+          </View>
+        </View>
+      </View>
+    );
+  }
+
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8, gap: 8 }}>
+    <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8, gap: 16 }}>
       <View style={{ flex: 1 }}>
         <Text style={{ color: vehicle.archived ? colors.muted : colors.text, fontSize: 16 }}>{vehicle.name}</Text>
         <Muted>
@@ -89,7 +133,10 @@ function VehicleRow({ vehicle, onChanged }: { vehicle: Vehicle; onChanged: () =>
             .join(' · ')}
         </Muted>
       </View>
-      <Pressable onPress={toggleArchived} hitSlop={8}>
+      <Pressable accessibilityRole="button" onPress={() => setEditing(true)} hitSlop={8}>
+        <Text style={{ color: colors.primary }}>Rename</Text>
+      </Pressable>
+      <Pressable accessibilityRole="button" onPress={() => void update({ archived: !vehicle.archived })} hitSlop={8}>
         <Text style={{ color: colors.primary }}>{vehicle.archived ? 'Restore' : 'Archive'}</Text>
       </Pressable>
     </View>

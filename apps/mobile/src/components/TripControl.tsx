@@ -1,7 +1,7 @@
 import { localTime, type Trip, type Vehicle } from '@mileage/shared';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Text, View } from 'react-native';
+import { Alert, Platform, Text, View } from 'react-native';
 import { ApiError, useApi } from '@/lib/api';
 import { deviceTimezone, formatMiles } from '@/lib/dates';
 import { currentPoint } from '@/lib/location';
@@ -13,6 +13,18 @@ const LAST_VEHICLE = 'mileage.lastVehicle';
 const readsFromCar = (v: Vehicle | undefined, teslaConnected: boolean) => Boolean(v?.teslaVin && teslaConnected);
 
 const numberOrNull = (s: string) => (s.trim() === '' ? null : Number(s.replace(/,/g, '')));
+
+function confirmCancel(): Promise<boolean> {
+  const title = 'Cancel this trip?';
+  const message = "It won't be saved to your log.";
+  if (Platform.OS === 'web') return Promise.resolve(globalThis.confirm?.(`${title}\n${message}`) ?? false);
+  return new Promise((resolve) =>
+    Alert.alert(title, message, [
+      { text: 'Keep trip', style: 'cancel', onPress: () => resolve(false) },
+      { text: 'Cancel trip', style: 'destructive', onPress: () => resolve(true) },
+    ]),
+  );
+}
 
 /** Start trip / End trip. Miles come from a linked Tesla, otherwise from odometer readings. */
 export function TripControl({
@@ -30,7 +42,7 @@ export function TripControl({
   const usable = vehicles.filter((v) => !v.archived);
   const [vehicleId, setVehicleId] = useState<string | null>(null);
   const [odometer, setOdometer] = useState('');
-  const [busy, setBusy] = useState<'start' | 'end' | null>(null);
+  const [busy, setBusy] = useState<'start' | 'end' | 'cancel' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [fieldError, setFieldError] = useState<string | undefined>();
 
@@ -120,6 +132,21 @@ export function TripControl({
     }
   }
 
+  async function cancel() {
+    if (!active || !(await confirmCancel())) return;
+    setError(null);
+    setBusy('cancel');
+    try {
+      await api.deleteTrip(active.id);
+      setOdometer('');
+      onChanged();
+    } catch (e) {
+      fail(e);
+    } finally {
+      setBusy(null);
+    }
+  }
+
   if (active) {
     const tz = deviceTimezone();
     return (
@@ -151,7 +178,13 @@ export function TripControl({
           />
         )}
         {error ? <Text style={{ color: colors.danger }}>{error}</Text> : null}
-        <Button title={fromCar ? 'End trip · read the car' : 'End trip'} onPress={end} busy={busy === 'end'} />
+        <Button
+          title={fromCar ? 'End trip · read the car' : 'End trip'}
+          onPress={end}
+          busy={busy === 'end'}
+          disabled={busy === 'cancel'}
+        />
+        <Button title="Cancel trip" kind="secondary" onPress={cancel} busy={busy === 'cancel'} disabled={busy === 'end'} />
       </Card>
     );
   }
