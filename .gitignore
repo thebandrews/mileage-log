@@ -1,0 +1,15 @@
+node_modules/
+dist/
+build/
+.expo/
+web-build/
+coverage/
+*.log
+.env
+.env.*
+!.env.example
+local.settings.json
+api-package/
+infra/*.json
+.DS_Store
+*.tsbuildinfo

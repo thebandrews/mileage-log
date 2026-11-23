@@ -1,0 +1,85 @@
+export const CLASSIFICATIONS = ['business', 'personal', 'commute', 'unclassified'] as const;
+export type Classification = (typeof CLASSIFICATIONS)[number];
+
+export const TRIP_SOURCES = ['manual', 'tesla', 'gps'] as const;
+export type TripSource = (typeof TRIP_SOURCES)[number];
+
+export const VEHICLE_KINDS = ['car', 'truck', 'van', 'other'] as const;
+export type VehicleKind = (typeof VEHICLE_KINDS)[number];
+
+export interface Trip {
+  id: string;
+  vehicleId: string | null;
+  /** ISO 8601 timestamp with offset. */
+  startedAt: string;
+  endedAt: string | null;
+  /** Where the trip started, as the user or a geocoder named it. */
+  startLabel: string | null;
+  /** Destination — required by the IRS for business trips. */
+  endLabel: string | null;
+  startOdometer: number | null;
+  endOdometer: number | null;
+  /** Miles, one decimal place. */
+  miles: number;
+  classification: Classification;
+  /** Business purpose — required by the IRS for business trips. */
+  purpose: string | null;
+  client: string | null;
+  notes: string | null;
+  source: TripSource;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Vehicle {
+  id: string;
+  name: string;
+  kind: VehicleKind;
+  isTesla: boolean;
+  /**
+   * Marked, modified work trucks and heavy cargo vehicles are qualified
+   * nonpersonal use vehicles and don't need per-trip substantiation.
+   */
+  qualifiedNonpersonalUse: boolean;
+  archived: boolean;
+  createdAt: string;
+}
+
+export interface Settings {
+  /** IANA time zone used to bucket trips into days and months. */
+  timezone: string;
+  /** Optional override of the IRS business rate, in cents per mile. */
+  customRateCents: number | null;
+}
+
+export interface User {
+  id: string;
+  email: string | null;
+  name: string | null;
+}
+
+export interface ClassificationTotals {
+  business: number;
+  personal: number;
+  commute: number;
+  unclassified: number;
+  total: number;
+}
+
+export interface PeriodSummary extends ClassificationTotals {
+  /** YYYY-MM-DD for days, YYYY-MM for months. */
+  period: string;
+  trips: number;
+  businessValueCents: number;
+}
+
+export interface ReportSummary {
+  from: string;
+  to: string;
+  timezone: string;
+  totals: ClassificationTotals & { trips: number; businessValueCents: number };
+  /** Business trips missing a destination or purpose — not IRS-ready yet. */
+  incompleteBusinessTrips: number;
+  byDay: PeriodSummary[];
+  byMonth: PeriodSummary[];
+}

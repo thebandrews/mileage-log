@@ -1,0 +1,23 @@
+{
+  "name": "mileage-log",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Mileage logging app for Pacifica Landscapes: automatic trips, one-tap classification, IRS-ready reports.",
+  "workspaces": [
+    "packages/*",
+    "api",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @mileage/shared && npm run build -w @mileage/api",
+    "typecheck": "npm run build -w @mileage/shared && npm run typecheck --workspaces --if-present",
+    "test": "npm run build -w @mileage/shared && npm run test --workspaces --if-present",
+    "dev:api": "npm run build -w @mileage/shared && npm run dev -w @mileage/api",
+    "dev:mobile": "npm run start -w @mileage/mobile",
+    "migrate": "npm run migrate -w @mileage/api",
+    "package:api": "node scripts/package-api.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "name": "@mileage/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/functions/*.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "dev": "tsc -p tsconfig.json && node dist/dev-server.js",
+    "migrate": "tsc -p tsconfig.json && node dist/migrate-cli.js"
+  },
+  "dependencies": {
+    "@azure/functions": "^4.8.0",
+    "@mileage/shared": "0.1.0",
+    "jose": "^6.0.0",
+    "pdf-lib": "^1.17.1",
+    "pg": "^8.16.0",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "@types/pg": "^8.15.0",
+    "typescript": "~5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

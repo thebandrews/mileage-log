@@ -1,0 +1,128 @@
+name: Deploy to Azure
+
+# Needs (see README → "Azure setup"):
+#   secrets: AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID, POSTGRES_ADMIN_PASSWORD
+#   variables: AZURE_RESOURCE_GROUP, ENTRA_API_CLIENT_ID, ENTRA_APP_CLIENT_ID
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'api/**'
+      - 'packages/**'
+      - 'apps/mobile/**'
+      - 'infra/**'
+      - 'scripts/**'
+      - '.github/workflows/deploy.yml'
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  infra:
+    runs-on: ubuntu-latest
+    outputs:
+      apiName: ${{ steps.deploy.outputs.apiName }}
+      apiBaseUrl: ${{ steps.deploy.outputs.apiBaseUrl }}
+      webName: ${{ steps.deploy.outputs.webName }}
+      webUrl: ${{ steps.deploy.outputs.webUrl }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Deploy Bicep
+        id: deploy
+        env:
+          POSTGRES_ADMIN_PASSWORD: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
+          ENTRA_API_CLIENT_ID: ${{ vars.ENTRA_API_CLIENT_ID }}
+        run: |
+          outputs=$(az deployment group create \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --name "mileage-${{ github.run_number }}" \
+            --parameters infra/main.bicepparam \
+            --query properties.outputs -o json)
+          for key in apiName apiBaseUrl webName webUrl; do
+            echo "$key=$(echo "$outputs" | jq -r ".$key.value")" >> "$GITHUB_OUTPUT"
+          done
+
+  api:
+    needs: infra
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Package API
+        run: npm run package:api
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Deploy to Functions (Flex Consumption)
+        uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ needs.infra.outputs.apiName }}
+          package: api-package
+          sku: flexconsumption
+          remote-build: false
+      - name: Smoke test
+        run: |
+          for i in $(seq 1 20); do
+            if curl -fsS "${{ needs.infra.outputs.apiBaseUrl }}/health"; then exit 0; fi
+            sleep 15
+          done
+          echo "API health check failed" && exit 1
+
+  web:
+    needs: infra
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build web app
+        working-directory: apps/mobile
+        env:
+          EXPO_NO_TELEMETRY: 1
+          EXPO_PUBLIC_API_URL: ${{ needs.infra.outputs.apiBaseUrl }}
+          EXPO_PUBLIC_AUTH_MODE: entra
+          EXPO_PUBLIC_ENTRA_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          EXPO_PUBLIC_ENTRA_CLIENT_ID: ${{ vars.ENTRA_APP_CLIENT_ID }}
+          EXPO_PUBLIC_ENTRA_API_SCOPE: api://${{ vars.ENTRA_API_CLIENT_ID }}/access_as_user
+        run: npx expo export --platform web --output-dir dist
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Get Static Web App deploy token
+        id: swa
+        run: |
+          token=$(az staticwebapp secrets list --name "${{ needs.infra.outputs.webName }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" --query properties.apiKey -o tsv)
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+      - name: Upload to Static Web Apps
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ steps.swa.outputs.token }}
+          action: upload
+          app_location: apps/mobile/dist
+          skip_app_build: true
+          skip_api_build: true
+      - run: echo "Web app is at ${{ needs.infra.outputs.webUrl }}"
