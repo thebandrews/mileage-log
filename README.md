@@ -91,18 +91,18 @@ echo "AZURE_SUBSCRIPTION_ID=$(az account show --query id -o tsv)"
 
 `Owner` on the resource group is needed because the template creates role assignments (storage, monitoring) and the database admin. It is scoped to this one group. If the subscription has never used these services, register the providers once: `az provider register -n Microsoft.Web`, `Microsoft.DBforPostgreSQL`, `Microsoft.OperationalInsights`, `Microsoft.Insights`, `Microsoft.Storage`.
 
-### 3. GitHub variables (no secrets)
+### 3. Deploy (no secrets)
 
-Nothing secret is stored in GitHub. Deploys sign in to Azure with OIDC (a short-lived token GitHub mints per run, trusted through the federated credential above), and the API signs in to PostgreSQL with its own managed identity (the database has password sign-in turned off). These four repository **variables** are identifiers, not credentials:
+Nothing secret is stored in GitHub. Deploys sign in to Azure with OIDC (a short-lived token GitHub mints per run, trusted through the federated credential above), and the API signs in to PostgreSQL with its own managed identity (password sign-in is off). The identifiers the workflow needs are committed at the top of `.github/workflows/deploy.yml`:
 
-| Variable | Value |
+| Name | Value |
 | --- | --- |
-| `AZURE_CLIENT_ID` | from step 2 |
-| `AZURE_TENANT_ID` | from step 2 (the personal tenant) |
-| `AZURE_SUBSCRIPTION_ID` | from step 2 |
-| `AZURE_RESOURCE_GROUP` | `rg-mileage-log` |
+| `AZURE_CLIENT_ID` | `c1c509c8-1676-4338-bcc7-1f9a3431d14b` (mileage-log-github) |
+| `AZURE_TENANT_ID` | `6b2283e3-b75d-414f-933e-02cf1cdf6053` (personal tenant) |
+| `AZURE_SUBSCRIPTION_ID` | `d308b3d9-92b1-4b1c-aba9-a7ca4b923521` (Azure subscription 1) |
+| `AZURE_RESOURCE_GROUP` | `rg-mileage-log` (West US 2) |
 
-Then run **Actions → Deploy to Azure**. It deploys the Bicep, the API (with a health check) and the web app, and prints the web URL.
+Every push to `main` that touches the app, API or infra deploys; **Actions → Deploy to Azure → Run workflow** deploys by hand. Each run deploys the Bicep, the API (with a health check) and the web app, and prints the web URL.
 
 ## Mobile builds (no Mac needed)
 
