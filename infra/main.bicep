@@ -230,6 +230,7 @@ resource apiSettings 'Microsoft.Web/sites/config@2024-04-01' = {
   parent: api
   name: 'appsettings'
   properties: {
+    AzureWebJobsStorage__accountName: storage.name
     AzureWebJobsStorage__blobServiceUri: storage.properties.primaryEndpoints.blob
     AzureWebJobsStorage__queueServiceUri: storage.properties.primaryEndpoints.queue
     AzureWebJobsStorage__tableServiceUri: storage.properties.primaryEndpoints.table

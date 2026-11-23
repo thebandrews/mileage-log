@@ -63,9 +63,9 @@ Created in the Pacifica tenant; their IDs are committed in `.github/workflows/de
 | Mileage Log API | `1e605472-f866-4d4d-a242-a17e6881ccaa` | App ID URI `api://1e605472-…`, scope `access_as_user`, access token version 2 |
 | Mileage Log App | `8f9a2e0f-8e53-4d67-87f5-e16d4445e40a` | Public client redirect `mileagelog://auth`; SPA redirect `http://localhost:8081/auth`; `access_as_user` with admin consent |
 
-After the first deploy, add `https://<static-web-app-host>/auth` to **Mileage Log App → Authentication → Single-page application**.
+The live web app's redirect `https://lively-grass-0921a801e.5.azurestaticapps.net/auth` is also registered. If the Static Web App is ever recreated with a new host name, add its `/auth` URL to **Mileage Log App → Authentication → Single-page application**.
 
-### 2. Resource group and GitHub deploy identity (personal subscription)
+### 2. Resource group and GitHub deploy identity (done, personal "Azure subscription 1")
 
 Run these signed in as ben.andrews@live.com (Azure Cloud Shell in the portal works, or `az login --tenant benandrewslive.onmicrosoft.com`):
 
@@ -82,6 +82,13 @@ az ad app federated-credential create --id $APP_ID --parameters '{
   "name": "github-main",
   "issuer": "https://token.actions.githubusercontent.com",
   "subject": "repo:thebandrews/mileage-log:ref:refs/heads/main",
+  "audiences": ["api://AzureADTokenExchange"]
+}'
+# GitHub now also identifies repos by numeric IDs in the token subject; trust that form too.
+az ad app federated-credential create --id $APP_ID --parameters '{
+  "name": "github-main-ids",
+  "issuer": "https://token.actions.githubusercontent.com",
+  "subject": "repo:thebandrews@915663/mileage-log@1468237833:ref:refs/heads/main",
   "audiences": ["api://AzureADTokenExchange"]
 }'
 echo "AZURE_CLIENT_ID=$APP_ID"
