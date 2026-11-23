@@ -111,6 +111,34 @@ Nothing secret is stored in GitHub. Deploys sign in to Azure with OIDC (a short-
 
 Every push to `main` that touches the app, API or infra deploys; **Actions → Deploy to Azure → Run workflow** deploys by hand. Each run deploys the Bicep, the API (with a health check) and the web app, and prints the web URL.
 
+## Start/End trips
+
+Today has a **Start trip** button. Pick the vehicle and tap Start; tap End when you arrive. Miles come from:
+
+- **A linked Tesla:** the server reads the car's odometer and location at Start and End (Tesla Fleet API, two reads per trip, inside Tesla's free monthly credit).
+- **Any other vehicle:** odometer readings typed at Start and End (the next start pre-fills the last reading). Phone-GPS distance arrives with the iPhone app.
+
+Start and end points are turned into addresses with Azure Maps (managed identity, no keys). Rename a place once ("Yard", "Smith residence") and trips that start or end within 150 m reuse the name.
+
+## Tesla connection (after Tesla approves the developer app)
+
+1. In the Tesla developer dashboard, set the allowed origin to `https://lively-grass-0921a801e.5.azurestaticapps.net` and the redirect URI to `https://lively-grass-0921a801e.5.azurestaticapps.net/tesla/callback`; request the `vehicle_device_data` and `vehicle_location` scopes.
+2. The partner public key is already published at `https://lively-grass-0921a801e.5.azurestaticapps.net/.well-known/appspecific/com.tesla.3p.public-key.pem`. Its private half was created inside Key Vault and never leaves it.
+3. Store the client secret in Key Vault (never in GitHub), from Cloud Shell:
+   `az keyvault secret set --vault-name <vault> -n tesla-client-secret --value '<client secret>'`
+4. Put the client ID (public) in `infra/main.bicepparam` as `teslaClientId` and push; the deploy turns the feature on.
+5. Register the partner account once (Tesla requires it per region), from Cloud Shell:
+   ```sh
+   TOKEN=$(curl -s -X POST https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token \
+     -d grant_type=client_credentials -d client_id=<client id> -d client_secret='<client secret>' \
+     -d scope='openid vehicle_device_data vehicle_location' \
+     -d audience=https://fleet-api.prd.na.vn.cloud.tesla.com | jq -r .access_token)
+   curl -s -X POST https://fleet-api.prd.na.vn.cloud.tesla.com/api/1/partner_accounts \
+     -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+     -d '{"domain":"lively-grass-0921a801e.5.azurestaticapps.net"}'
+   ```
+6. In the app: **Settings → Connect Tesla**. Your Tesla vehicle is linked by VIN (a Tesla you already added is reused).
+
 ## Mobile builds (no Mac needed)
 
 1. Join the Apple Developer Program and create an Expo account.

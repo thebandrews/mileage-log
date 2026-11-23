@@ -4,6 +4,9 @@ export type Classification = (typeof CLASSIFICATIONS)[number];
 export const TRIP_SOURCES = ['manual', 'tesla', 'gps'] as const;
 export type TripSource = (typeof TRIP_SOURCES)[number];
 
+export const TRIP_STATUSES = ['in_progress', 'finished'] as const;
+export type TripStatus = (typeof TRIP_STATUSES)[number];
+
 export const VEHICLE_KINDS = ['car', 'truck', 'van', 'other'] as const;
 export type VehicleKind = (typeof VEHICLE_KINDS)[number];
 
@@ -19,8 +22,14 @@ export interface Trip {
   endLabel: string | null;
   startOdometer: number | null;
   endOdometer: number | null;
-  /** Miles, one decimal place. */
+  /** Miles, one decimal place. 0 while the trip is in progress. */
   miles: number;
+  /** A started trip is in progress until it's ended. Reports only count finished trips. */
+  status: TripStatus;
+  startLat: number | null;
+  startLng: number | null;
+  endLat: number | null;
+  endLng: number | null;
   classification: Classification;
   /** Business purpose — required by the IRS for business trips. */
   purpose: string | null;
@@ -42,6 +51,8 @@ export interface Vehicle {
    */
   qualifiedNonpersonalUse: boolean;
   archived: boolean;
+  /** Set once the vehicle is linked to a Tesla account. */
+  teslaVin: string | null;
   createdAt: string;
 }
 
@@ -82,4 +93,14 @@ export interface ReportSummary {
   incompleteBusinessTrips: number;
   byDay: PeriodSummary[];
   byMonth: PeriodSummary[];
+}
+
+/** Where the app should get the miles for a started trip. */
+export type MilesSource = 'tesla' | 'odometer' | 'gps';
+
+export interface TeslaStatus {
+  /** The Tesla developer app is set up on the server. */
+  configured: boolean;
+  /** This user has linked a Tesla account. */
+  connected: boolean;
 }

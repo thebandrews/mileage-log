@@ -1,4 +1,15 @@
-import type { ReportSummary, Settings, Trip, TripInput, User, Vehicle, VehicleInput } from '@mileage/shared';
+import type {
+  ReportSummary,
+  Settings,
+  TeslaStatus,
+  Trip,
+  TripEndInput,
+  TripInput,
+  TripStartInput,
+  User,
+  Vehicle,
+  VehicleInput,
+} from '@mileage/shared';
 import { useMemo } from 'react';
 import { useAuth } from './auth';
 import { config } from './config';
@@ -65,6 +76,15 @@ export function useApi() {
       createTrip: (t: TripInput) => json<Trip>('POST', '/trips', t),
       updateTrip: (id: string, t: TripInput) => json<Trip>('PUT', `/trips/${id}`, t),
       deleteTrip: (id: string) => json<void>('DELETE', `/trips/${id}`),
+      activeTrip: () => json<{ trip: Trip | null }>('GET', '/trips/active'),
+      startTrip: (t: TripStartInput) => json<Trip>('POST', '/trips/start', t),
+      endTrip: (id: string, t: TripEndInput) => json<Trip>('POST', `/trips/${id}/end`, t),
+      lastOdometer: (vehicleId: string) =>
+        json<{ lastOdometer: number | null }>('GET', `/vehicles/${vehicleId}/odometer`),
+      teslaStatus: () => json<TeslaStatus>('GET', '/tesla/status'),
+      teslaConnect: () => json<{ url: string }>('POST', '/tesla/connect'),
+      teslaCallback: (code: string, state: string) =>
+        json<{ connected: boolean; vehicles: Vehicle[] }>('POST', '/tesla/callback', { code, state }),
       summary: (r: Range) => json<ReportSummary>('GET', `/reports/summary?${qs(r)}`),
       /** Raw report download (CSV or PDF) with auth applied. */
       report: (kind: 'csv' | 'pdf', r: Range) => raw('GET', `/reports/log.${kind}?${qs(r)}`),

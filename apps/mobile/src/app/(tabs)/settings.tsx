@@ -1,6 +1,6 @@
 import { irsBusinessRateCents, type Vehicle, type VehicleKind } from '@mileage/shared';
 import { useState } from 'react';
-import { Pressable, Switch, Text, View } from 'react-native';
+import { Linking, Platform, Pressable, Switch, Text, View } from 'react-native';
 import { Button, Card, ErrorBanner, Field, Loading, Muted, Screen, Segmented, colors } from '@/components/ui';
 import { ApiError, useApi } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -70,7 +70,7 @@ function VehicleForm({ onSaved }: { onSaved: () => void }) {
 function VehicleRow({ vehicle, onChanged }: { vehicle: Vehicle; onChanged: () => void }) {
   const api = useApi();
   const toggleArchived = async () => {
-    const { id: _id, createdAt: _c, ...rest } = vehicle;
+    const { id: _id, createdAt: _c, teslaVin: _v, ...rest } = vehicle;
     await api.updateVehicle(vehicle.id, { ...rest, archived: !vehicle.archived });
     onChanged();
   };
@@ -79,7 +79,12 @@ function VehicleRow({ vehicle, onChanged }: { vehicle: Vehicle; onChanged: () =>
       <View style={{ flex: 1 }}>
         <Text style={{ color: vehicle.archived ? colors.muted : colors.text, fontSize: 16 }}>{vehicle.name}</Text>
         <Muted>
-          {[vehicle.kind, vehicle.isTesla && 'Tesla', vehicle.qualifiedNonpersonalUse && 'QNUV', vehicle.archived && 'archived']
+          {[
+            vehicle.kind,
+            vehicle.teslaVin ? 'Tesla linked' : vehicle.isTesla && 'Tesla',
+            vehicle.qualifiedNonpersonalUse && 'QNUV',
+            vehicle.archived && 'archived',
+          ]
             .filter(Boolean)
             .join(' · ')}
         </Muted>
@@ -94,12 +99,32 @@ function VehicleRow({ vehicle, onChanged }: { vehicle: Vehicle; onChanged: () =>
 export default function Settings() {
   const api = useApi();
   const { signOut } = useAuth();
-  const { data, error, loading, reload } = useLoad(() => Promise.all([api.me(), api.vehicles()]), [api]);
+  const { data, error, loading, reload } = useLoad(
+    () =>
+      Promise.all([
+        api.me(),
+        api.vehicles(),
+        api.teslaStatus().catch(() => ({ configured: false, connected: false })),
+      ]),
+    [api],
+  );
+  const [teslaError, setTeslaError] = useState<string | null>(null);
   const [rate, setRate] = useState<string | null>(null);
   const [rateError, setRateError] = useState<string | undefined>();
 
   if (!data && loading) return <Loading />;
-  const [me, vehicles] = data ?? [null, []];
+  const [me, vehicles, tesla] = data ?? [null, [], { configured: false, connected: false }];
+
+  async function connectTesla() {
+    setTeslaError(null);
+    try {
+      const { url } = await api.teslaConnect();
+      if (Platform.OS === 'web') globalThis.location.assign(url);
+      else await Linking.openURL(url);
+    } catch (e) {
+      setTeslaError(e instanceof Error ? e.message : String(e));
+    }
+  }
   const irsRate = irsBusinessRateCents(today());
   const rateText = rate ?? (me?.customRateCents != null ? String(me.customRateCents) : '');
 
@@ -143,6 +168,24 @@ export default function Settings() {
           error={rateError}
         />
         <Button title="Save rate" kind="secondary" onPress={saveRate} disabled={rate === null} />
+      </Card>
+
+      <Card style={{ gap: 8 }}>
+        <Text style={{ fontSize: 16, fontWeight: '700', color: colors.text }}>Tesla</Text>
+        {!tesla.configured ? (
+          <Muted>Not set up yet. This turns on once Tesla approves the developer account.</Muted>
+        ) : tesla.connected ? (
+          <>
+            <Muted>Connected. Trips in a linked Tesla read the odometer from the car.</Muted>
+            <Button title="Reconnect Tesla" kind="secondary" onPress={connectTesla} />
+          </>
+        ) : (
+          <>
+            <Muted>Sign in to Tesla once so trips read the car's odometer and location.</Muted>
+            <Button title="Connect Tesla" onPress={connectTesla} />
+          </>
+        )}
+        {teslaError ? <Text style={{ color: colors.danger }}>{teslaError}</Text> : null}
       </Card>
 
       <Card>

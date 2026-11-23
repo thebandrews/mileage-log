@@ -89,6 +89,39 @@ export const vehicleInputSchema = z.object({
 });
 export type VehicleInput = z.input<typeof vehicleInputSchema>;
 
+const latitude = z.number().min(-90).max(90);
+const longitude = z.number().min(-180).max(180);
+const point = z
+  .object({ latitude, longitude })
+  .nullish()
+  .transform((v) => v ?? null);
+
+/** Start a trip: what's known when you tap Start. */
+export const tripStartSchema = z.object({
+  vehicleId: z.uuid().nullish().transform((v) => v ?? null),
+  startedAt: z.iso
+    .datetime({ offset: true })
+    .nullish()
+    .transform((v) => v ?? null),
+  location: point,
+  /** Manual reading when the car can't be read automatically. */
+  startOdometer: odometer,
+});
+export type TripStartInput = z.input<typeof tripStartSchema>;
+
+/** End a trip: miles come from the car, the odometer, or the phone's GPS distance. */
+export const tripEndSchema = z.object({
+  endedAt: z.iso
+    .datetime({ offset: true })
+    .nullish()
+    .transform((v) => v ?? null),
+  location: point,
+  endOdometer: odometer,
+  /** Distance the phone measured, when there's no odometer. */
+  gpsMiles: z.number().positive().max(5000).nullish().transform((v) => v ?? null),
+});
+export type TripEndInput = z.input<typeof tripEndSchema>;
+
 export const settingsInputSchema = z.object({
   timezone: z
     .string()

@@ -122,6 +122,7 @@ export function summarizeTrips(trips: readonly Trip[], opts: SummaryOptions): Re
   let incomplete = 0;
 
   for (const trip of trips) {
+    if (trip.status === 'in_progress') continue;
     const day = localDate(trip.startedAt, opts.timezone);
     if (day < opts.from || day > opts.to) continue;
     const month = day.slice(0, 7);

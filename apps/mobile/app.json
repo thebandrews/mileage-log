@@ -29,7 +29,13 @@
       "expo-router",
       "expo-web-browser",
       "expo-secure-store",
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Mileage Log records where each trip starts and ends so your log shows the destination."
+        }
+      ]
     ],
     "scheme": "mileagelog",
     "experiments": {

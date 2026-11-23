@@ -8,9 +8,10 @@ import { createApp } from './app.js';
 import { createAuthenticator } from './auth.js';
 import { loadConfig } from './config.js';
 import { createPool } from './db.js';
+import { servicesFromEnv } from './services.js';
 
 const port = Number(process.env.PORT ?? 7071);
-const api = createApp(createPool(), createAuthenticator(loadConfig()));
+const api = createApp(createPool(), createAuthenticator(loadConfig()), servicesFromEnv());
 
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {

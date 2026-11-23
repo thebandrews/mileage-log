@@ -44,6 +44,7 @@ jobs:
       apiBaseUrl: ${{ steps.deploy.outputs.apiBaseUrl }}
       webName: ${{ steps.deploy.outputs.webName }}
       webUrl: ${{ steps.deploy.outputs.webUrl }}
+      keyVaultName: ${{ steps.deploy.outputs.keyVaultName }}
     steps:
       - uses: actions/checkout@v4
       - uses: azure/login@v2
@@ -59,7 +60,7 @@ jobs:
             --name "mileage-${{ github.run_number }}" \
             --parameters infra/main.bicepparam \
             --query properties.outputs -o json)
-          for key in apiName apiBaseUrl webName webUrl; do
+          for key in apiName apiBaseUrl webName webUrl keyVaultName; do
             echo "$key=$(echo "$outputs" | jq -r ".$key.value")" >> "$GITHUB_OUTPUT"
           done
 
@@ -105,6 +106,27 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+      - name: Publish the Tesla partner public key
+        # The private key is created inside Key Vault and never leaves it; Tesla reads the
+        # public half from https://<site>/.well-known/appspecific/com.tesla.3p.public-key.pem
+        run: |
+          vault="${{ needs.infra.outputs.keyVaultName }}"
+          out=apps/mobile/public/.well-known/appspecific/com.tesla.3p.public-key.pem
+          mkdir -p "$(dirname "$out")"
+          for i in $(seq 1 12); do   # a new role assignment can take a few minutes to apply
+            if az keyvault key show --vault-name "$vault" -n tesla-partner-key -o none 2>/dev/null \
+               || az keyvault key create --vault-name "$vault" -n tesla-partner-key --kty EC --curve P-256 --ops sign verify -o none; then
+              az keyvault key download --vault-name "$vault" -n tesla-partner-key -e PEM -f "$out" && break
+            fi
+            sleep 20
+          done
+          grep -q "BEGIN PUBLIC KEY" "$out"
+          cat "$out"
       - name: Build web app
         working-directory: apps/mobile
         env:
@@ -115,11 +137,6 @@ jobs:
           EXPO_PUBLIC_ENTRA_CLIENT_ID: ${{ env.ENTRA_APP_CLIENT_ID }}
           EXPO_PUBLIC_ENTRA_API_SCOPE: api://${{ env.ENTRA_API_CLIENT_ID }}/access_as_user
         run: npx expo export --platform web --output-dir dist
-      - uses: azure/login@v2
-        with:
-          client-id: ${{ env.AZURE_CLIENT_ID }}
-          tenant-id: ${{ env.AZURE_TENANT_ID }}
-          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
       - name: Get Static Web App deploy token
         id: swa
         run: |

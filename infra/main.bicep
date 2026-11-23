@@ -21,6 +21,9 @@ param entraTenantId string
 @description('Application (client) ID of the "Mileage Log API" app registration.')
 param entraApiClientId string
 
+@description('Client ID of the Tesla developer app (public). Empty until Tesla approves the app; the Tesla feature stays off.')
+param teslaClientId string = ''
+
 @description('Extra browser origins allowed to call the API (e.g. http://localhost:8081 for Expo web dev).')
 param extraCorsOrigins array = ['http://localhost:8081']
 
@@ -32,6 +35,8 @@ var names = {
   plan: '${appName}-plan'
   api: '${appName}-api-${take(suffix, 6)}'
   postgres: '${appName}-pg-${take(suffix, 6)}'
+  maps: '${appName}-maps'
+  vault: take('${appName}kv${suffix}', 24)
   web: '${appName}-web'
 }
 var deploymentContainer = 'app-package'
@@ -42,6 +47,9 @@ var roles = {
   storageQueueDataContributor: '974c5e8b-45b9-4653-ba55-5f855dd0fb88'
   storageTableDataContributor: '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'
   monitoringMetricsPublisher: '3913510d-42f4-4e42-8a64-420c390055eb'
+  mapsDataReader: '423170ca-a8f6-4b0f-8487-9e4eb8f49bfa'
+  keyVaultSecretsOfficer: 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7'
+  keyVaultCryptoOfficer: '14b46e9e-c2b7-41b4-b07b-48a6ebf60603'
 }
 
 // ---------- Monitoring ----------
@@ -141,6 +149,42 @@ resource allowAzure 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@202
   }
 }
 
+// ---------- Azure Maps (destination addresses; Entra auth only, no keys) ----------
+
+resource maps 'Microsoft.Maps/accounts@2023-06-01' = {
+  name: names.maps
+  location: location
+  kind: 'Gen2'
+  sku: { name: 'G2' }
+  properties: { disableLocalAuth: true }
+}
+
+// ---------- Key Vault (Tesla app secret, Tesla refresh tokens, Tesla partner key) ----------
+// Nothing in here is ever stored in GitHub. The Tesla client secret is added once by hand;
+// the partner key is created inside the vault and never leaves it (only its public half is published).
+
+resource vault 'Microsoft.KeyVault/vaults@2023-07-01' = {
+  name: names.vault
+  location: location
+  properties: {
+    tenantId: tenant().tenantId
+    sku: { family: 'A', name: 'standard' }
+    enableRbacAuthorization: true
+    enableSoftDelete: true
+    softDeleteRetentionInDays: 30
+  }
+}
+
+// The deploy identity creates the partner key if missing and publishes its public half.
+resource deployerKeyRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(vault.id, deployer().objectId, roles.keyVaultCryptoOfficer)
+  scope: vault
+  properties: {
+    principalId: deployer().objectId
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.keyVaultCryptoOfficer)
+  }
+}
+
 // ---------- Static Web App (web build of the Expo app) ----------
 
 resource web 'Microsoft.Web/staticSites@2024-04-01' = {
@@ -204,6 +248,26 @@ resource storageRoleAssignments 'Microsoft.Authorization/roleAssignments@2022-04
   }
 ]
 
+resource mapsRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(maps.id, api.id, roles.mapsDataReader)
+  scope: maps
+  properties: {
+    principalId: api.identity.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.mapsDataReader)
+  }
+}
+
+resource vaultSecretsRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(vault.id, api.id, roles.keyVaultSecretsOfficer)
+  scope: vault
+  properties: {
+    principalId: api.identity.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.keyVaultSecretsOfficer)
+  }
+}
+
 resource insightsRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(insights.id, api.id, roles.monitoringMetricsPublisher)
   scope: insights
@@ -245,12 +309,18 @@ resource apiSettings 'Microsoft.Web/sites/config@2024-04-01' = {
     PGUSER: api.name
     PG_AUTH: 'entra'
     PGSSLMODE: 'require'
+    MAPS_CLIENT_ID: maps.properties.uniqueId
+    KEY_VAULT_URI: vault.properties.vaultUri
+    TESLA_CLIENT_ID: teslaClientId
+    TESLA_CLIENT_SECRET: '@Microsoft.KeyVault(VaultName=${vault.name};SecretName=tesla-client-secret)'
+    TESLA_REDIRECT_URI: 'https://${web.properties.defaultHostname}/tesla/callback'
   }
-  dependsOn: [pgAdmin, storageRoleAssignments, insightsRole]
+  dependsOn: [pgAdmin, storageRoleAssignments, insightsRole, mapsRole, vaultSecretsRole]
 }
 
 output apiName string = api.name
 output apiBaseUrl string = 'https://${api.properties.defaultHostName}/api'
 output webName string = web.name
 output webUrl string = 'https://${web.properties.defaultHostname}'
+output keyVaultName string = vault.name
 output postgresHost string = postgres.properties.fullyQualifiedDomainName

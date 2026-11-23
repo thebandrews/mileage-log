@@ -1,7 +1,10 @@
 {
   "navigationFallback": {
     "rewrite": "/index.html",
-    "exclude": ["/_expo/*", "/assets/*", "*.{js,css,png,ico,json,ttf,svg}"]
+    "exclude": ["/_expo/*", "/assets/*", "/.well-known/*", "*.{js,css,png,ico,json,ttf,svg,pem}"]
+  },
+  "mimeTypes": {
+    ".pem": "application/x-pem-file"
   },
   "globalHeaders": {
     "X-Content-Type-Options": "nosniff",

@@ -111,8 +111,9 @@ function confirm(title: string, message: string): Promise<boolean> {
 }
 
 export default function TripEditor() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, classify } = useLocalSearchParams<{ id: string; classify?: string }>();
   const isNew = id === 'new';
+  const classifying = classify === '1';
   const api = useApi();
   const [trip, setTrip] = useState<Trip | null>(null);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -185,8 +186,17 @@ export default function TripEditor() {
 
   return (
     <Screen>
-      <Stack.Screen options={{ title: isNew ? 'New trip' : 'Edit trip' }} />
+      <Stack.Screen options={{ title: isNew ? 'New trip' : classifying ? 'Trip ended' : 'Edit trip' }} />
       {errors._ ? <ErrorBanner message={errors._} /> : null}
+      {classifying && trip ? (
+        <View style={{ gap: 4 }}>
+          <Text style={{ fontSize: 28, fontWeight: '800', color: colors.primary }}>{formatMiles(trip.miles)} mi</Text>
+          <Text style={{ fontSize: 16, color: colors.text }}>
+            {[trip.startLabel, trip.endLabel].filter(Boolean).join(' → ') || 'Locations unavailable'}
+          </Text>
+          <Muted>Business or personal? Rename the places if you like; the app remembers them next time.</Muted>
+        </View>
+      ) : null}
 
       <Segmented label="Type" options={CLASSES} value={form.classification} onChange={(v) => set('classification', v)} />
 
@@ -254,7 +264,7 @@ export default function TripEditor() {
       <Field label="Client" value={form.client} onChangeText={(v) => set('client', v)} error={errors.client} />
       <Field label="Notes" value={form.notes} onChangeText={(v) => set('notes', v)} multiline error={errors.notes} />
 
-      <Button title={isNew ? 'Save trip' : 'Save changes'} onPress={save} busy={busy} />
+      <Button title={isNew ? 'Save trip' : classifying ? 'Save' : 'Save changes'} onPress={save} busy={busy} />
       {!isNew ? <Button title="Delete trip" kind="secondary" onPress={remove} disabled={busy} /> : null}
       {trip ? (
         <Text style={{ color: colors.muted, fontSize: 12, textAlign: 'center' }}>

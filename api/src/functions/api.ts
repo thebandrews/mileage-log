@@ -3,8 +3,9 @@ import { createApp } from '../app.js';
 import { createAuthenticator } from '../auth.js';
 import { loadConfig } from '../config.js';
 import { createPool } from '../db.js';
+import { servicesFromEnv } from '../services.js';
 
-const api = createApp(createPool(), createAuthenticator(loadConfig()));
+const api = createApp(createPool(), createAuthenticator(loadConfig()), servicesFromEnv());
 
 /** One catch-all HTTP function; routing happens in app.ts. */
 app.http('api', {

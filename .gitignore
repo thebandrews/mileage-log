@@ -13,3 +13,4 @@ api-package/
 infra/*.json
 .DS_Store
 *.tsbuildinfo
+apps/mobile/public/.well-known/

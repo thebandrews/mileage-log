@@ -61,6 +61,37 @@ export const MIGRATIONS: { version: number; name: string; sql: string }[] = [
       CREATE UNIQUE INDEX trips_external_idx ON trips(user_id, source, external_id) WHERE external_id IS NOT NULL;
     `,
   },
+  {
+    version: 2,
+    name: 'start-end-trips-and-tesla',
+    sql: `
+      -- Trips can be started and ended; miles are unknown until the end.
+      ALTER TABLE trips ADD COLUMN status text NOT NULL DEFAULT 'finished'
+        CHECK (status IN ('in_progress','finished'));
+      ALTER TABLE trips ALTER COLUMN miles DROP NOT NULL;
+      ALTER TABLE trips DROP CONSTRAINT trips_miles_check;
+      ALTER TABLE trips ADD CONSTRAINT trips_miles_check CHECK (status = 'in_progress' OR miles > 0);
+      -- The geocoded address, kept apart from the label the user sees and may rename.
+      ALTER TABLE trips ADD COLUMN start_address text;
+      ALTER TABLE trips ADD COLUMN end_address text;
+      CREATE UNIQUE INDEX trips_one_active_idx ON trips(user_id)
+        WHERE status = 'in_progress' AND deleted_at IS NULL;
+
+      ALTER TABLE vehicles ADD COLUMN tesla_vin text;
+      CREATE UNIQUE INDEX vehicles_tesla_vin_idx ON vehicles(user_id, tesla_vin) WHERE tesla_vin IS NOT NULL;
+
+      -- Refresh tokens live in Key Vault; this only records that a link exists.
+      CREATE TABLE tesla_accounts (
+        user_id uuid PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        connected_at timestamptz NOT NULL DEFAULT now()
+      );
+      CREATE TABLE oauth_states (
+        state text PRIMARY KEY,
+        user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at timestamptz NOT NULL DEFAULT now()
+      );
+    `,
+  },
 ];
 
 /** Scope for Microsoft Entra tokens accepted by Azure Database for PostgreSQL. */

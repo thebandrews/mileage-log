@@ -24,6 +24,11 @@ function trip(overrides: Partial<Trip>): Trip {
     startOdometer: null,
     endOdometer: null,
     miles: 10,
+    status: 'finished',
+    startLat: null,
+    startLng: null,
+    endLat: null,
+    endLng: null,
     classification: 'business',
     purpose: 'Materials pickup',
     client: null,
@@ -142,6 +147,16 @@ describe('summarizeTrips', () => {
     expect(s.totals.businessValueCents).toBe(500);
   });
 
+  it('ignores trips still in progress', () => {
+    const s = summarizeTrips([trip({ miles: 0, status: 'in_progress', purpose: null }), trip({ miles: 4 })], {
+      from: '2026-11-01',
+      to: '2026-11-30',
+      timezone: TZ,
+    });
+    expect(s.totals.trips).toBe(1);
+    expect(s.incompleteBusinessTrips).toBe(0);
+  });
+
   it('counts business trips missing destination or purpose', () => {
     const s = summarizeTrips([trip({ purpose: null }), trip({})], {
       from: '2026-11-01',
@@ -162,6 +177,7 @@ describe('tripsToCsv', () => {
         isTesla: true,
         qualifiedNonpersonalUse: false,
         archived: false,
+        teslaVin: null,
         createdAt: '2026-01-01T00:00:00Z',
       },
     ];

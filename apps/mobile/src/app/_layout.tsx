@@ -5,7 +5,9 @@ import { AuthProvider, useAuth } from '@/lib/auth';
 
 function RootStack() {
   const { status } = useAuth();
-  const signedIn = status === 'signedIn';
+  // While the saved session is being restored, keep the app's screens reachable so a reload
+  // stays on the page it was on; signing out (or a failed restore) moves to sign-in.
+  const signedOut = status === 'signedOut';
   return (
     <Stack
       screenOptions={{
@@ -14,11 +16,12 @@ function RootStack() {
         contentStyle: { backgroundColor: colors.bg },
       }}
     >
-      <Stack.Protected guard={signedIn}>
+      <Stack.Protected guard={!signedOut}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="trip/[id]" options={{ presentation: 'modal', title: 'Trip' }} />
+        <Stack.Screen name="tesla/callback" options={{ title: 'Connecting Tesla' }} />
       </Stack.Protected>
-      <Stack.Protected guard={!signedIn}>
+      <Stack.Protected guard={signedOut}>
         <Stack.Screen name="sign-in" options={{ headerShown: false }} />
       </Stack.Protected>
       <Stack.Screen name="auth" options={{ headerShown: false }} />
