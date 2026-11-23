@@ -25,6 +25,8 @@ concurrency:
 
 jobs:
   infra:
+    # Skip quietly until the Azure setup in the README is done.
+    if: vars.AZURE_RESOURCE_GROUP != ''
     runs-on: ubuntu-latest
     outputs:
       apiName: ${{ steps.deploy.outputs.apiName }}
