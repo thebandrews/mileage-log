@@ -10,13 +10,49 @@ import {
 } from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Platform } from 'react-native';
 import { config } from './config';
+import { initialQuery, peekReturnPath, restoreReturnPath } from './returnPath';
 import { storage } from './storage';
 
 // Closes the sign-in popup on web once Entra redirects back.
 WebBrowser.maybeCompleteAuthSession();
 
 const REFRESH_KEY = 'mileage.refreshToken';
+
+/**
+ * On the web, sign-in leaves the page and Entra redirects back to /auth?code=…, instead of a
+ * pop-up: phone browsers turn pop-ups into tabs and can lose Entra's session cookie between
+ * them (AADSTS165000). The PKCE verifier waits in sessionStorage for the return trip.
+ */
+const PENDING_KEY = 'mileage.pendingSignIn';
+interface PendingSignIn {
+  state: string;
+  codeVerifier: string;
+  redirectUri: string;
+  returnPath: string | null;
+}
+const webRedirect = Platform.OS === 'web';
+
+/** The sign-in this page is returning from, used up on read so a code is never exchanged twice. */
+function takePendingSignIn(): (PendingSignIn & { code: string | null; error: string | null }) | null {
+  if (!webRedirect || !initialQuery || (!initialQuery.has('code') && !initialQuery.has('error'))) return null;
+  let pending: PendingSignIn | null = null;
+  try {
+    pending = JSON.parse(sessionStorage.getItem(PENDING_KEY) ?? 'null') as PendingSignIn | null;
+    sessionStorage.removeItem(PENDING_KEY);
+  } catch {
+    // Storage blocked: nothing to finish.
+  }
+  if (!pending || pending.state !== initialQuery.get('state')) return null;
+  return {
+    ...pending,
+    code: initialQuery.get('code'),
+    error: initialQuery.get('error')
+      ? `${initialQuery.get('error')}: ${initialQuery.get('error_description') ?? ''}`.slice(0, 300)
+      : null,
+  };
+}
 const HINT_KEY = 'mileage.loginHint';
 
 /** The signed-in username from an ID token, used as a login hint next time (skips the account picker). */
@@ -146,6 +182,35 @@ function EntraAuth({ children }: { children: ReactNode }) {
     if (!discovery) return;
     let cancelled = false;
     (async () => {
+      const returning = takePendingSignIn();
+      if (returning) {
+        restoreReturnPath(returning.returnPath);
+        try {
+          if (returning.error || !returning.code) throw new Error(returning.error ?? 'Sign-in failed');
+          const t = await exchangeCodeAsync(
+            {
+              clientId: config.clientId,
+              code: returning.code,
+              redirectUri: returning.redirectUri,
+              extraParams: { code_verifier: returning.codeVerifier },
+            },
+            discovery,
+          );
+          if (cancelled) return;
+          await save(t);
+          setError(null);
+          setStatus('signedIn');
+        } catch (e) {
+          console.warn('[auth] sign-in failed:', describeError(e));
+          if (!cancelled) {
+            setError(describeError(e));
+            setStatus('signedOut');
+          }
+        } finally {
+          restored.current.resolve();
+        }
+        return;
+      }
       const saved = await storage.get(REFRESH_KEY);
       if (!saved) {
         if (!cancelled) setStatus('signedOut');
@@ -204,6 +269,21 @@ function EntraAuth({ children }: { children: ReactNode }) {
       canSignIn: Boolean(request),
       signIn: () => {
         setError(null);
+        if (webRedirect && request?.url && request.codeVerifier) {
+          const pending: PendingSignIn = {
+            state: request.state,
+            codeVerifier: request.codeVerifier,
+            redirectUri,
+            returnPath: peekReturnPath(),
+          };
+          try {
+            sessionStorage.setItem(PENDING_KEY, JSON.stringify(pending));
+            window.location.assign(request.url);
+            return;
+          } catch {
+            // Storage blocked: fall back to the pop-up.
+          }
+        }
         void promptAsync();
       },
       signOut,
@@ -224,7 +304,7 @@ function EntraAuth({ children }: { children: ReactNode }) {
         }
       },
     }),
-    [discovery, status, error, request, promptAsync, signOut, refresh, save, lose],
+    [discovery, status, error, request, redirectUri, promptAsync, signOut, refresh, save, lose],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
