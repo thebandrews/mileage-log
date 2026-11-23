@@ -1,4 +1,5 @@
 import {
+  TokenError,
   exchangeCodeAsync,
   makeRedirectUri,
   refreshAsync,
@@ -16,6 +17,28 @@ import { storage } from './storage';
 WebBrowser.maybeCompleteAuthSession();
 
 const REFRESH_KEY = 'mileage.refreshToken';
+const HINT_KEY = 'mileage.loginHint';
+
+/** The signed-in username from an ID token, used as a login hint next time (skips the account picker). */
+function usernameFromIdToken(idToken: string | undefined): string | null {
+  try {
+    const part = idToken?.split('.')[1];
+    if (!part) return null;
+    const json = JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/')));
+    return typeof json.preferred_username === 'string' ? json.preferred_username : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Only an explicit rejection from Entra means the saved session is dead; network blips don't. */
+const sessionRejected = (e: unknown) =>
+  e instanceof TokenError && ['invalid_grant', 'interaction_required', 'login_required'].includes(e.code);
+
+function describeError(e: unknown): string {
+  if (e instanceof TokenError) return `${e.code}: ${e.description ?? ''}`.slice(0, 300);
+  return e instanceof Error ? e.message : String(e);
+}
 const SCOPES = ['openid', 'profile', 'offline_access'];
 
 type Status = 'loading' | 'signedOut' | 'signedIn';
@@ -61,8 +84,17 @@ function DevAuth({ children }: { children: ReactNode }) {
 function EntraAuth({ children }: { children: ReactNode }) {
   const discovery = useAutoDiscovery(`https://login.microsoftonline.com/${config.tenantId}/v2.0`);
   const redirectUri = makeRedirectUri({ scheme: 'mileagelog', path: 'auth' });
+  const [loginHint, setLoginHint] = useState<string | null>(null);
+  useEffect(() => {
+    void storage.get(HINT_KEY).then(setLoginHint);
+  }, []);
   const [request, response, promptAsync] = useAuthRequest(
-    { clientId: config.clientId, scopes: [...SCOPES, config.apiScope], redirectUri },
+    {
+      clientId: config.clientId,
+      scopes: [...SCOPES, config.apiScope],
+      redirectUri,
+      extraParams: loginHint ? { login_hint: loginHint } : undefined,
+    },
     discovery,
   );
   const [status, setStatus] = useState<Status>('loading');
@@ -73,6 +105,17 @@ function EntraAuth({ children }: { children: ReactNode }) {
   const save = useCallback(async (t: TokenResponse) => {
     token.current = t;
     if (t.refreshToken) await storage.set(REFRESH_KEY, t.refreshToken);
+    else console.warn('[auth] Entra returned no refresh token; the session will not survive a reload');
+    const hint = usernameFromIdToken(t.idToken);
+    if (hint) await storage.set(HINT_KEY, hint);
+  }, []);
+
+  /** Forget the session in this window; drop the saved token only when Entra rejected it. */
+  const lose = useCallback(async (e: unknown) => {
+    console.warn('[auth] could not refresh the session:', describeError(e));
+    token.current = null;
+    if (sessionRejected(e)) await storage.remove(REFRESH_KEY);
+    setStatus('signedOut');
   }, []);
 
   const signOut = useCallback(async () => {
@@ -106,14 +149,14 @@ function EntraAuth({ children }: { children: ReactNode }) {
         if (cancelled) return;
         await save(t);
         setStatus('signedIn');
-      } catch {
-        if (!cancelled) await signOut();
+      } catch (e) {
+        if (!cancelled) await lose(e);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [discovery, refresh, save, signOut]);
+  }, [discovery, refresh, save, lose]);
 
   // Finish an interactive sign-in.
   useEffect(() => {
@@ -137,7 +180,10 @@ function EntraAuth({ children }: { children: ReactNode }) {
         setError(null);
         setStatus('signedIn');
       })
-      .catch((e: Error) => setError(e.message));
+      .catch((e: unknown) => {
+        console.warn('[auth] sign-in code exchange failed:', describeError(e));
+        setError(describeError(e));
+      });
   }, [response, discovery, request, redirectUri, save]);
 
   const value = useMemo<AuthState>(
@@ -155,7 +201,7 @@ function EntraAuth({ children }: { children: ReactNode }) {
         if (current && TokenResponse.isTokenFresh(current, 120)) return current.accessToken;
         const refreshToken = current?.refreshToken ?? (await storage.get(REFRESH_KEY));
         if (!discovery || !refreshToken) {
-          await signOut();
+          setStatus('signedOut');
           throw new Error('Signed out');
         }
         try {
@@ -163,12 +209,12 @@ function EntraAuth({ children }: { children: ReactNode }) {
           await save(t);
           return t.accessToken;
         } catch (e) {
-          await signOut();
+          await lose(e);
           throw e;
         }
       },
     }),
-    [discovery, status, error, request, promptAsync, signOut, refresh, save],
+    [discovery, status, error, request, promptAsync, signOut, refresh, save, lose],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
