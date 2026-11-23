@@ -101,6 +101,10 @@ function EntraAuth({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const token = useRef<TokenResponse | null>(null);
   const refreshing = useRef<Promise<TokenResponse> | null>(null);
+  // Screens can mount while the saved session is restored; their API calls wait for this.
+  const restored = useRef(deferred());
+  const discoveryRef = useRef(discovery);
+  discoveryRef.current = discovery;
 
   const save = useCallback(async (t: TokenResponse) => {
     token.current = t;
@@ -143,7 +147,11 @@ function EntraAuth({ children }: { children: ReactNode }) {
     let cancelled = false;
     (async () => {
       const saved = await storage.get(REFRESH_KEY);
-      if (!saved) return !cancelled && setStatus('signedOut');
+      if (!saved) {
+        if (!cancelled) setStatus('signedOut');
+        restored.current.resolve();
+        return;
+      }
       try {
         const t = await refresh(discovery, saved);
         if (cancelled) return;
@@ -151,6 +159,8 @@ function EntraAuth({ children }: { children: ReactNode }) {
         setStatus('signedIn');
       } catch (e) {
         if (!cancelled) await lose(e);
+      } finally {
+        restored.current.resolve();
       }
     })();
     return () => {
@@ -179,6 +189,7 @@ function EntraAuth({ children }: { children: ReactNode }) {
         await save(t);
         setError(null);
         setStatus('signedIn');
+        restored.current.resolve();
       })
       .catch((e: unknown) => {
         console.warn('[auth] sign-in code exchange failed:', describeError(e));
@@ -197,15 +208,14 @@ function EntraAuth({ children }: { children: ReactNode }) {
       },
       signOut,
       async getAccessToken() {
+        await restored.current.promise;
         const current = token.current;
         if (current && TokenResponse.isTokenFresh(current, 120)) return current.accessToken;
         const refreshToken = current?.refreshToken ?? (await storage.get(REFRESH_KEY));
-        if (!discovery || !refreshToken) {
-          setStatus('signedOut');
-          throw new Error('Signed out');
-        }
+        const doc = discoveryRef.current;
+        if (!doc || !refreshToken) throw new Error('Signed out');
         try {
-          const t = await refresh(discovery, refreshToken);
+          const t = await refresh(doc, refreshToken);
           await save(t);
           return t.accessToken;
         } catch (e) {
@@ -218,4 +228,10 @@ function EntraAuth({ children }: { children: ReactNode }) {
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((r) => (resolve = r));
+  return { promise, resolve };
 }
