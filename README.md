@@ -44,27 +44,36 @@ npm run typecheck
 
 ## Azure setup (one time)
 
-### 1. Entra app registrations
+Sign-in and hosting live in different tenants:
 
-In the Entra admin center → App registrations, create two single-tenant registrations:
+| | Tenant | Used for |
+| --- | --- | --- |
+| Pacifica Landscapes | `4712cd50-fdbe-47a5-b632-f5d5e5e1a61b` | Entra app registrations; users sign in with work accounts |
+| Personal (ben.andrews@live.com) | `benandrewslive.onmicrosoft.com` | Azure subscription that hosts the API, database and web app |
 
-**Mileage Log API**
-- Expose an API → Application ID URI `api://<api-client-id>` → add scope `access_as_user` (admins and users can consent).
-- Manifest: set `"requestedAccessTokenVersion": 2` (shown as `accessTokenAcceptedVersion` in older manifests).
+The API accepts tokens from the Pacifica tenant only; where it's hosted doesn't matter.
 
-**Mileage Log App** (public client)
-- Authentication → add platform **Mobile and desktop applications** with redirect URI `mileagelog://auth`.
-- Add platform **Single-page application** with redirect URIs `https://<static-web-app-host>/auth` (from the first deploy's output) and `http://localhost:8081/auth`.
-- API permissions → add `Mileage Log API / access_as_user` → grant admin consent.
+### 1. Entra app registrations (done)
 
-### 2. Azure resource group and GitHub deploy identity
+Created in the Pacifica tenant; their IDs are committed in `.github/workflows/deploy.yml`, `infra/main.bicepparam` and `apps/mobile/.env.example`.
+
+| Registration | Client ID | Settings |
+| --- | --- | --- |
+| Mileage Log API | `1e605472-f866-4d4d-a242-a17e6881ccaa` | App ID URI `api://1e605472-…`, scope `access_as_user`, access token version 2 |
+| Mileage Log App | `8f9a2e0f-8e53-4d67-87f5-e16d4445e40a` | Public client redirect `mileagelog://auth`; SPA redirect `http://localhost:8081/auth`; `access_as_user` with admin consent |
+
+After the first deploy, add `https://<static-web-app-host>/auth` to **Mileage Log App → Authentication → Single-page application**.
+
+### 2. Resource group and GitHub deploy identity (personal subscription)
+
+Run these signed in as ben.andrews@live.com (Azure Cloud Shell in the portal works, or `az login --tenant benandrewslive.onmicrosoft.com`):
 
 ```sh
+az account set --subscription "<personal subscription name or id>"
 az group create -n rg-mileage-log -l westus2
 
 # Identity GitHub Actions signs in as (no stored password; OIDC federation)
-az ad app create --display-name mileage-log-github
-APP_ID=$(az ad app list --display-name mileage-log-github --query [0].appId -o tsv)
+APP_ID=$(az ad app create --display-name mileage-log-github --query appId -o tsv)
 az ad sp create --id $APP_ID
 az role assignment create --assignee $APP_ID --role Owner \
   --scope $(az group show -n rg-mileage-log --query id -o tsv)
@@ -74,30 +83,30 @@ az ad app federated-credential create --id $APP_ID --parameters '{
   "subject": "repo:thebandrews/mileage-log:ref:refs/heads/main",
   "audiences": ["api://AzureADTokenExchange"]
 }'
+echo "AZURE_CLIENT_ID=$APP_ID"
+echo "AZURE_TENANT_ID=$(az account show --query tenantId -o tsv)"
+echo "AZURE_SUBSCRIPTION_ID=$(az account show --query id -o tsv)"
 ```
 
-`Owner` on the resource group is needed because the template creates role assignments (Key Vault, storage). It is scoped to this one group.
+`Owner` on the resource group is needed because the template creates role assignments (Key Vault, storage). It is scoped to this one group. If the subscription has never used these services, register the providers once: `az provider register -n Microsoft.Web`, `Microsoft.DBforPostgreSQL`, `Microsoft.KeyVault`, `Microsoft.OperationalInsights`, `Microsoft.Insights`, `Microsoft.Storage`.
 
-### 3. GitHub secrets and variables
+### 3. GitHub secrets and variable
 
 | Name | Kind | Value |
 | --- | --- | --- |
-| `AZURE_CLIENT_ID` | secret | `$APP_ID` from step 2 |
-| `AZURE_TENANT_ID` | secret | your tenant ID |
-| `AZURE_SUBSCRIPTION_ID` | secret | your subscription ID |
+| `AZURE_CLIENT_ID` | secret | from step 2 |
+| `AZURE_TENANT_ID` | secret | from step 2 (the personal tenant) |
+| `AZURE_SUBSCRIPTION_ID` | secret | from step 2 |
 | `POSTGRES_ADMIN_PASSWORD` | secret | a long random password (16+ chars) |
 | `AZURE_RESOURCE_GROUP` | variable | `rg-mileage-log` |
-| `ENTRA_API_CLIENT_ID` | variable | client ID of **Mileage Log API** |
-| `ENTRA_APP_CLIENT_ID` | variable | client ID of **Mileage Log App** |
 
-Then run **Actions → Deploy to Azure**. It deploys the Bicep, the API (with a health check) and the web app, and prints the web URL. Add that URL's `/auth` to the SPA redirect URIs if you haven't yet.
+Then run **Actions → Deploy to Azure**. It deploys the Bicep, the API (with a health check) and the web app, and prints the web URL.
 
 ## Mobile builds (no Mac needed)
 
 1. Join the Apple Developer Program and create an Expo account.
 2. Once, from any terminal: `cd apps/mobile && npx eas-cli init && npx eas-cli build -p ios --profile development`. EAS asks for your Apple ID and creates the signing credentials.
-3. Set the app's config as EAS environment variables (they're public identifiers, not secrets) for the `development`, `preview` and `production` environments:
-   `EXPO_PUBLIC_API_URL`, `EXPO_PUBLIC_AUTH_MODE=entra`, `EXPO_PUBLIC_ENTRA_TENANT_ID`, `EXPO_PUBLIC_ENTRA_CLIENT_ID`, `EXPO_PUBLIC_ENTRA_API_SCOPE`.
+3. Set the app's config as EAS environment variables (public identifiers, not secrets) for the `development`, `preview` and `production` environments: `EXPO_PUBLIC_API_URL` (the deployed API), `EXPO_PUBLIC_AUTH_MODE=entra`, and the three `EXPO_PUBLIC_ENTRA_*` values from `apps/mobile/.env.example`.
 4. After that, **Actions → Mobile build (EAS)** builds without a terminal (needs the `EXPO_TOKEN` secret).
 
 Profiles: `development` (dev client for live reload), `preview` (internal install), `production` (App Store / TestFlight).

@@ -23,8 +23,8 @@ param postgresAdminLogin string = 'mileageadmin'
 @minLength(16)
 param postgresAdminPassword string
 
-@description('Microsoft Entra tenant (directory) ID.')
-param entraTenantId string = tenant().tenantId
+@description('Entra tenant that signs users in. May differ from the tenant hosting these resources.')
+param entraTenantId string
 
 @description('Application (client) ID of the "Mileage Log API" app registration.')
 param entraApiClientId string
