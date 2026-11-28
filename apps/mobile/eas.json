@@ -33,10 +33,19 @@
         "EXPO_PUBLIC_ENTRA_TENANT_ID": "4712cd50-fdbe-47a5-b632-f5d5e5e1a61b",
         "EXPO_PUBLIC_ENTRA_CLIENT_ID": "8f9a2e0f-8e53-4d67-87f5-e16d4445e40a",
         "EXPO_PUBLIC_ENTRA_API_SCOPE": "api://1e605472-f866-4d4d-a242-a17e6881ccaa/access_as_user"
-      }
+      },
+      "distribution": "store"
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "ios": {
+        "appleId": "ben.andrews@gmail.com",
+        "appleTeamId": "T9HM4BSRS7",
+        "appName": "Pacifica Mileage Log",
+        "sku": "pacifica-mileage-log",
+        "language": "en-US"
+      }
+    }
   }
 }
